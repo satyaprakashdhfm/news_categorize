@@ -1,0 +1,72 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Article {
+  id          String   @id @default(cuid())
+  dnaCode     String   @unique // Format: COUNTRY-CATEGORY-YEAR-NUMBER
+  title       String
+  content     String
+  summary     String?
+  imageUrl    String?  // Local path to stored image
+  sourceUrl   String
+  publishedAt DateTime
+  scrapedAt   DateTime @default(now())
+  country     Country
+  category    Category
+  year        Int
+  sequenceNum Int
+  
+  // Story threading
+  threadId    String?
+  parentId    String?
+  parent      Article? @relation("StoryThread", fields: [parentId], references: [id])
+  children    Article[] @relation("StoryThread")
+  
+  @@map("articles")
+}
+
+model StoryThread {
+  id          String   @id @default(cuid())
+  title       String   // Main story title
+  description String?
+  country     Country
+  category    Category
+  startDate   DateTime
+  lastUpdate  DateTime @updatedAt
+  articleCount Int     @default(0)
+  
+  @@map("story_threads")
+}
+
+enum Country {
+  USA
+  RUSSIA
+  INDIA
+  CHINA
+  JAPAN
+  UK
+  GERMANY
+  FRANCE
+  BRAZIL
+  AUSTRALIA
+}
+
+enum Category {
+  POL // Politics & Governance
+  ECO // Economy & Business
+  SOC // Society & Culture
+  TEC // Technology & Science
+  ENV // Environment & Climate
+  HEA // Health & Medicine
+  SPO // Sports & Entertainment
+  SEC // Security & Conflict
+}
