@@ -171,7 +171,7 @@ export default function AdminPage() {
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">News Scraping Admin</h1>
-          <p className="text-gray-600">Monitor and control worldwide news collection with Bright Data MCP & Gemini AI</p>
+          <p className="text-gray-600">Monitor and control country-topic news collection with Bright Data MCP & Gemini AI</p>
         </div>
 
         {/* Control Panel */}
@@ -199,7 +199,7 @@ export default function AdminPage() {
                   ) : (
                     <>
                       <Play className="w-4 h-4 mr-2" />
-                      Start Worldwide Scraping
+                      Start Country+Topic Scraping
                     </>
                   )}
                 </Button>

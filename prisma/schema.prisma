@@ -14,7 +14,7 @@ model Article {
   id          String   @id @default(cuid())
   dnaCode     String   @unique // Format: COUNTRY-CATEGORY-YEAR-NUMBER
   title       String
-  content     String
+  content     String?
   summary     String?
   imageUrl    String?  // Local path to stored image
   sourceUrl   String
@@ -27,6 +27,7 @@ model Article {
   
   // Story threading
   threadId    String?
+  thread      StoryThread? @relation(fields: [threadId], references: [id])
   parentId    String?
   parent      Article? @relation("StoryThread", fields: [parentId], references: [id])
   children    Article[] @relation("StoryThread")
@@ -43,6 +44,7 @@ model StoryThread {
   startDate   DateTime
   lastUpdate  DateTime @updatedAt
   articleCount Int     @default(0)
+  articles     Article[]
   
   @@map("story_threads")
 }

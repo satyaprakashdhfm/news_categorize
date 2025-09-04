@@ -58,118 +58,6 @@ export class NewsScrapingService extends EventEmitter {
     };
   }
 
-  async startWorldwideNewsScraping(): Promise<void> {
-    if (this.isRunning) {
-      throw new Error('Scraping is already running');
-    }
-
-    this.isRunning = true;
-    this.resetStats();
-    
-    try {
-      await this.initializeScraping();
-      await this.performWorldwideScraping();
-      this.completeScraping();
-    } catch (error) {
-      this.handleScrapingError(error);
-    } finally {
-      this.isRunning = false;
-    }
-  }
-
-  private resetStats() {
-    this.stats = {
-      totalArticlesFound: 0,
-      articlesProcessed: 0,
-      articlesSkipped: 0,
-      errors: 0,
-      countriesProcessed: [],
-      categoriesFound: [],
-      startTime: new Date(),
-      status: 'running'
-    };
-  }
-
-  private async initializeScraping() {
-    this.emitProgress('initializing', 0, 'Initializing Tavily client...');
-    // Tavily SDK uses API key; no explicit init needed
-    this.emitProgress('initializing', 10, 'Tavily client ready');
-  }
-
-  private async performWorldwideScraping() {
-    console.log(`[SCRAPER] Starting worldwide scraping using Tavily`);
-    this.emitProgress('searching', 15, `Searching latest news with Tavily...`);
-
-    // Simple search like user's example
-    const response = await tvly.search('India latest news', {
-      maxResults: 10
-    });
-
-    const articles = (response?.results || []).map((r: any) => ({
-      title: r.title,
-      url: r.url,
-      content: r.content,
-      country: this.detectCountryFromUrl(r.url) || 'INDIA'
-    }));
-
-    this.stats.totalArticlesFound = articles.length;
-    console.log(`[SCRAPER] Found ${articles.length} articles`);
-    
-    if (articles.length === 0) {
-      console.log(`[SCRAPER] No articles found`);
-      return;
-    }
-
-    this.emitProgress('processing', 50, `Processing ${articles.length} articles...`);
-
-    // Process each article
-    for (const article of articles) {
-      try {
-        console.log(`Processing: ${article.title}`);
-        
-        // Check if exists
-        const existing = await prisma.article.findFirst({
-          where: { sourceUrl: article.url }
-        });
-        
-        if (existing) {
-          console.log(`Skipping existing: ${article.url}`);
-          this.stats.articlesSkipped++;
-          continue;
-        }
-
-        // Get full content
-        const fullContent = await this.extractContent(article.url);
-        if (!fullContent || fullContent.length < 100) {
-          console.log(`Content too short: ${article.url}`);
-          this.stats.articlesSkipped++;
-          continue;
-        }
-
-        // Process with Gemini
-        const newsArticle: NewsArticle = {
-          title: article.title,
-          content: fullContent,
-          sourceUrl: article.url,
-          publishedAt: new Date(),
-          country: this.normalizeCountry(article.country)
-        };
-
-        const processed = await newsProcessor.processArticle(newsArticle);
-        await this.saveProcessedArticle(processed);
-        
-        this.stats.articlesProcessed++;
-        this.updateStatsFromArticle(processed);
-        
-        console.log(`✅ Saved: ${processed.dnaCode}`);
-        
-      } catch (error) {
-        console.error(`Error processing ${article.url}:`, error);
-        this.stats.errors++;
-      }
-    }
-  }
-
   async startCountryTopicScraping(params: {
     countries: ReadonlyArray<SupportedCountry>;
     topics: ReadonlyArray<string>;
@@ -251,16 +139,9 @@ export class NewsScrapingService extends EventEmitter {
                 continue;
               }
 
-              const fullContent = await this.extractContent(article.url);
-              if (!fullContent || fullContent.length < 100) {
-                console.log(`Content too short: ${article.url}`);
-                this.stats.articlesSkipped++;
-                continue;
-              }
-
               const newsArticle: NewsArticle = {
                 title: article.title,
-                content: fullContent,
+                content: undefined,
                 sourceUrl: article.url,
                 publishedAt: new Date(),
                 country: this.normalizeCountry(article.country),
@@ -294,6 +175,25 @@ export class NewsScrapingService extends EventEmitter {
     }
   }
 
+  private resetStats() {
+    this.stats = {
+      totalArticlesFound: 0,
+      articlesProcessed: 0,
+      articlesSkipped: 0,
+      errors: 0,
+      countriesProcessed: [],
+      categoriesFound: [],
+      startTime: new Date(),
+      status: 'running'
+    };
+  }
+
+  private async initializeScraping() {
+    this.emitProgress('initializing', 0, 'Initializing Tavily client...');
+    // Tavily SDK uses API key; no explicit init needed
+    this.emitProgress('initializing', 10, 'Tavily client ready');
+  }
+
   private async saveProcessedArticle(article: ProcessedArticle) {
     this.emitProgress('saving', null, `Saving: ${article.title.substring(0, 50)}...`);
 
@@ -302,15 +202,15 @@ export class NewsScrapingService extends EventEmitter {
     console.log(`[DB] - DNA Code: ${article.dnaCode}`);
     console.log(`[DB] - Country: ${article.country}`);
     console.log(`[DB] - Category: ${article.category}`);
-    console.log(`[DB] - Content length: ${article.content.length} chars`);
+    console.log(`[DB] - Content length: ${article.content?.length || 0} chars`);
     console.log(`[DB] - Summary length: ${article.summary?.length || 0} chars`);
     console.log(`[DB] - Source URL: ${article.sourceUrl}`);
     console.log(`[DB] - Thread ID: ${article.threadId || 'none'}`);
     console.log(`[DB] - Parent ID: ${article.parentId || 'none'}`);
 
     // Validate required fields before saving
-    if (!article.title || !article.content || !article.dnaCode || !article.summary) {
-      throw new Error(`Missing required fields: title=${!!article.title}, content=${!!article.content}, dnaCode=${!!article.dnaCode}, summary=${!!article.summary}`);
+    if (!article.title || !article.dnaCode || !article.sourceUrl) {
+      throw new Error(`Missing required fields: title=${!!article.title}, dnaCode=${!!article.dnaCode}, sourceUrl=${!!article.sourceUrl}`);
     }
 
     // Retry logic for database operations
@@ -324,8 +224,8 @@ export class NewsScrapingService extends EventEmitter {
         const savedArticle = await prisma.article.create({
           data: {
             title: article.title.trim(),
-            content: article.content.trim(),
-            summary: article.summary.trim(),
+            content: article.content?.trim() || '',
+            summary: article.summary?.trim() || '',
             sourceUrl: article.sourceUrl,
             publishedAt: article.publishedAt,
             country: article.country as any,
@@ -338,12 +238,23 @@ export class NewsScrapingService extends EventEmitter {
           }
         });
         
-        console.log(`[DB] ✅ Successfully saved article: ${article.dnaCode} (ID: ${savedArticle.id})`);
+        console.log(`[DB] Saved article with ID: ${savedArticle.id}`);
+
+        // Increment thread article count
+        if (article.threadId) {
+          await prisma.storyThread.update({
+            where: { id: article.threadId },
+            data: { articleCount: { increment: 1 } },
+          });
+          console.log(`[DB] Incremented articleCount for thread ${article.threadId}`);
+        }
+        
+        console.log(`[DB] Successfully saved article: ${article.dnaCode} (ID: ${savedArticle.id})`);
         return savedArticle;
         
       } catch (dbError) {
         lastError = dbError as Error;
-        console.error(`[DB] ❌ Save attempt ${attempt}/${maxRetries} failed for ${article.dnaCode}:`, dbError);
+        console.error(`[DB] Save attempt ${attempt}/${maxRetries} failed for ${article.dnaCode}:`, dbError);
         
         if (dbError instanceof Error) {
           console.error(`[DB] Error message: ${dbError.message}`);
@@ -428,29 +339,6 @@ export class NewsScrapingService extends EventEmitter {
     if (allowed.has(normalized)) return normalized as any;
     // Default for India-focused scraping session
     return 'INDIA' as any;
-  }
-
-  private async extractContent(url: string): Promise<string | null> {
-    try {
-      const resp = await tvly.extract(
-        [url],
-        {
-          extractDepth: 'basic',
-          format: 'text',
-          includeImages: false,
-          timeout: 60,
-        }
-      );
-      const item = resp?.results?.[0];
-      const content: string | undefined = typeof item?.rawContent === 'string' ? item.rawContent : undefined;
-      if (!content || content.length < 1) {
-        return null;
-      }
-      return content;
-    } catch (e) {
-      console.error(`[TAVILY] Extract failed for ${url}:`, e);
-      return null;
-    }
   }
 
   private completeScraping() {

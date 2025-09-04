@@ -41,14 +41,28 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Start scraping in background
-      newsScrapingService.startWorldwideNewsScraping().catch(error => {
+      // Default to country-topic scraping across all supported countries with standard topics
+      const defaultTopics = ['economics','politics','technology','environment','health','sports','security'];
+      const formatDate = (d: Date) => {
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        return `${dd}-${mm}-${yyyy}`;
+      };
+      const today = formatDate(new Date());
+      // Start scraping in background with defaults
+      newsScrapingService.startCountryTopicScraping({
+        countries: SUPPORTED_COUNTRIES,
+        topics: defaultTopics,
+        date: today,
+      }).catch(error => {
         console.error('Scraping failed:', error);
       });
 
       return NextResponse.json({
         success: true,
-        message: 'Scraping started successfully'
+        message: 'Country+Topic scraping started successfully (default preset)',
+        params: { countries: SUPPORTED_COUNTRIES, topics: defaultTopics, date: today }
       });
     }
 
