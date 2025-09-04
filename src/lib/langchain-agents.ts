@@ -19,49 +19,55 @@ export interface ProcessedArticle extends NewsArticle {
   parentId?: string;
 }
 
+export interface ProcessOptions {
+  forceCategory?: string;
+  threadKey?: string; // deterministic thread identifier, e.g., COUNTRY-topic-slug
+}
+
 export class NewsProcessor {
   private llm: ChatGoogleGenerativeAI;
 
   constructor() {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      console.error('[GEMINI] FATAL: GOOGLE_API_KEY is not set in the environment variables.');
+      throw new Error('GOOGLE_API_KEY is not set.');
+    }
+
     this.llm = new ChatGoogleGenerativeAI({
-      modelName: 'gemini-1.5-flash',
+      apiKey,
+      modelName: 'gemini-2.5-flash',
       temperature: 0.1,
-      apiKey: process.env.GOOGLE_API_KEY,
     });
+    console.log('[GEMINI] Gemini client initialized successfully.');
   }
 
   private async classifyCategory(title: string, content: string): Promise<string> {
     console.log(`[GEMINI] Starting category classification for: "${title.substring(0, 50)}..."`);
     console.log(`[GEMINI] Content length for classification: ${content.length} chars`);
     
-    const prompt = `
-      Analyze the following news article and classify it into ONE of these 8 categories:
-      
-      Categories:
-      - POL (Politics & Governance): Government, elections, policy, diplomacy
-      - ECO (Economy & Business): Markets, trade, finance, companies
-      - SOC (Society & Culture): Social issues, culture, education, lifestyle
-      - TEC (Technology & Science): Tech innovations, research, digital trends
-      - ENV (Environment & Climate): Climate change, sustainability, nature
-      - HEA (Health & Medicine): Healthcare, medical research, public health
-      - SPO (Sports & Entertainment): Sports, movies, music, celebrities
-      - SEC (Security & Conflict): Military, terrorism, conflicts, crime
-      
-      Article Title: ${title}
-      Article Content: ${content}
-      
-      Return ONLY the 3-letter category code (POL, ECO, SOC, TEC, ENV, HEA, SPO, or SEC).
-    `;
+    const messages = [
+      { role: 'system', content: 'You are a news categorization expert. Classify articles into exactly one of these categories: POL (Politics), ECO (Economy), SOC (Society), TEC (Technology), ENV (Environment), HEA (Health), SPO (Sports), SEC (Security). Return ONLY the 3-letter code.' },
+      { role: 'user', content: `Title: ${title}\n\nContent: ${content.substring(0, 2000)}` }
+    ];
 
     try {
       console.log(`[GEMINI] Sending classification request to Gemini...`);
-      const response = await this.llm.invoke(prompt);
+      const response = await this.llm.invoke(messages);
       const category = response.content.toString().trim().toUpperCase();
       console.log(`[GEMINI] Category classification result: ${category}`);
+      
+      const validCategories = ['POL', 'ECO', 'SOC', 'TEC', 'ENV', 'HEA', 'SPO', 'SEC'];
+      if (!validCategories.includes(category)) {
+        console.log(`[GEMINI] Invalid category "${category}", defaulting to ECO`);
+        return 'ECO'; // Default fallback
+      }
+      
       return category;
     } catch (error) {
       console.error(`[GEMINI] Error in category classification:`, error);
-      throw error;
+      console.log(`[GEMINI] Falling back to ECO category due to error`);
+      return 'ECO'; // Fallback instead of throwing
     }
   }
 
@@ -69,78 +75,82 @@ export class NewsProcessor {
     console.log(`[GEMINI] Starting summary generation for: "${title.substring(0, 50)}..."`);
     console.log(`[GEMINI] Content length for summary: ${content.length} chars`);
     
-    const prompt = `
-      Create a concise 2-3 sentence summary of this news article:
-      
-      Title: ${title}
-      Content: ${content}
-      
-      Focus on the key facts and main points. Keep it informative and neutral.
-    `;
-
+    const messages = [
+      { role: 'system', content: 'Create concise 2-3 sentence news summaries. Focus on key facts and main points. Keep it informative and neutral.' },
+      { role: 'user', content: `Title: ${title}\n\nContent: ${content.substring(0, 2000)}` }
+    ];
+    
     try {
       console.log(`[GEMINI] Sending summary request to Gemini...`);
-      const response = await this.llm.invoke(prompt);
+      const response = await this.llm.invoke(messages);
       const summary = response.content.toString().trim();
       console.log(`[GEMINI] Summary generated (${summary.length} chars): "${summary.substring(0, 100)}..."`);
       return summary;
     } catch (error) {
       console.error(`[GEMINI] Error in summary generation:`, error);
-      throw error;
+      console.log(`[GEMINI] Falling back to empty summary due to error`);
+      return ''; // Return empty string, will be handled by fallback logic
     }
   }
 
-  private async findThreading(title: string, content: string, category: string, country: string, existingArticles: string): Promise<string> {
-    console.log(`[GEMINI] Starting threading analysis for: "${title.substring(0, 50)}..."`);
-    console.log(`[GEMINI] Analyzing against ${existingArticles.split('---').length - 1} existing articles`);
-    
-    const prompt = `
-      Analyze if this news article is related to any existing story threads.
-      
-      New Article:
-      Title: ${title}
-      Content: ${content}
-      Category: ${category}
-      Country: ${country}
-      
-      Existing Articles in Same Category and Country:
-      ${existingArticles}
-      
-      If this article continues or relates to an existing story, return the ID of the most relevant article.
-      If this is a new story, return "NEW_THREAD".
-      
-      Consider these factors:
-      - Same main topic or event
-      - Chronological progression
-      - Same key people or organizations involved
-      - Geographic relevance
-      
-      Return format: Either an article ID or "NEW_THREAD"
-    `;
+  private async findThreading(title: string, content: string, category: string, existingArticles: any[]): Promise<string> {
+    if (existingArticles.length === 0) {
+      console.log(`[GEMINI] No existing articles to compare against - creating new thread`);
+      return 'NEW_THREAD';
+    }
 
+    console.log(`[GEMINI] Starting threading analysis for: "${title.substring(0, 50)}..."`);
+    console.log(`[GEMINI] Analyzing against ${existingArticles.length} existing articles`);
+    
+    const messages = [
+      { role: 'system', content: "Decide if the NEW article should be threaded with one of the EXISTING articles. Choose the SINGLE most relevant existing article if related. Return EXACTLY the chosen article's ID string. If none are related, return 'NEW_THREAD'. Return only a bare ID or NEW_THREAD with no extra text." },
+      { role: 'user', content: `New Article:\nTitle: ${title}\nContent: ${content.substring(0, 1000)}\n\nExisting Articles (ID | DNA | Title):\n${existingArticles.slice(0, 5).map(art => `${art.id} | ${art.dnaCode} | ${art.title}`).join('\n')}\n\nReturn ONLY one of: ${existingArticles.slice(0, 5).map(a => a.id).join(', ')} or NEW_THREAD.` }
+    ];
+    
     try {
       console.log(`[GEMINI] Sending threading request to Gemini...`);
-      const response = await this.llm.invoke(prompt);
+      const response = await this.llm.invoke(messages);
       const threadingResult = response.content.toString().trim();
       console.log(`[GEMINI] Threading analysis result: ${threadingResult}`);
       return threadingResult;
     } catch (error) {
       console.error(`[GEMINI] Error in threading analysis:`, error);
-      throw error;
+      console.log(`[GEMINI] Falling back to NEW_THREAD due to error`);
+      return 'NEW_THREAD'; // Default to new thread on error
     }
   }
 
-  async processArticle(article: NewsArticle): Promise<ProcessedArticle> {
+  async processArticle(article: NewsArticle, options?: ProcessOptions): Promise<ProcessedArticle> {
     try {
       console.log(`[AI] Starting processing for article: ${article.title}`);
       console.log(`[AI] Article content length: ${article.content.length} chars`);
       
-      // Step 1: Categorize the article
-      console.log(`[AI] Step 1: Categorizing article...`);
-      const category = await this.classifyCategory(
-        article.title,
-        article.content.substring(0, 2000)
-      );
+      // Step 1: Category selection (forced or model)
+      if (options?.forceCategory) {
+        console.log(`[AI] Step 1: Using forced category mode`);
+      } else {
+        console.log(`[AI] Step 1: Categorizing article...`);
+      }
+      let category: string;
+      if (options?.forceCategory) {
+        const forced = options.forceCategory.toUpperCase();
+        const valid = ['POL', 'ECO', 'SOC', 'TEC', 'ENV', 'HEA', 'SPO', 'SEC'];
+        if (valid.includes(forced)) {
+          console.log(`[AI] Using forced category: ${forced}`);
+          category = forced;
+        } else {
+          console.log(`[AI] forceCategory '${options.forceCategory}' is invalid; falling back to model classification`);
+          category = await this.classifyCategory(
+            article.title,
+            article.content.substring(0, 2000)
+          );
+        }
+      } else {
+        category = await this.classifyCategory(
+          article.title,
+          article.content.substring(0, 2000)
+        );
+      }
       console.log(`[AI] Category determined: ${category}`);
       
       // Step 2: Generate summary
@@ -149,7 +159,12 @@ export class NewsProcessor {
         article.title,
         article.content.substring(0, 2000)
       );
-      console.log(`[AI] Summary generated: ${summary.substring(0, 100)}...`);
+      const finalSummary = this.normalizeOrFallbackSummary(
+        article.title,
+        article.content,
+        summary
+      );
+      console.log(`[AI] Summary finalized: ${finalSummary.substring(0, 100)}...`);
       
       // Step 3: Generate DNA code
       console.log(`[AI] Step 3: Generating DNA code...`);
@@ -158,40 +173,73 @@ export class NewsProcessor {
       const dnaCode = `${article.country}-${category}-${year}-${sequenceNum.toString().padStart(3, '0')}`;
       console.log(`[AI] DNA code generated: ${dnaCode}`);
       
-      // Step 4: Find story threading
-      console.log(`[AI] Step 4: Finding story threading...`);
-      const existingArticles = await this.getExistingArticles(article.country, category);
-      console.log(`[AI] Found ${existingArticles.length} existing articles for threading analysis`);
-      const threadingDecision = await this.findThreading(
-        article.title,
-        article.content.substring(0, 1000),
-        category,
-        article.country,
-        this.formatExistingArticles(existingArticles)
-      );
-      console.log(`[AI] Threading decision: ${threadingDecision}`);
-      
+      // Step 4: Threading
+      console.log(`[AI] Step 4: Threading...`);
       let parentId: string | undefined;
       let threadId: string | undefined;
-      
-      if (threadingDecision !== 'NEW_THREAD') {
-        parentId = threadingDecision;
-        // Get the thread ID from the parent article
-        const parentArticle = await prisma.article.findUnique({
-          where: { id: parentId }
+      if (options?.threadKey) {
+        threadId = options.threadKey;
+        // Find the most recent article in this thread to link as parent
+        const lastInThread = await prisma.article.findFirst({
+          where: { threadId },
+          orderBy: { scrapedAt: 'desc' },
+          select: { id: true },
         });
-        threadId = parentArticle?.threadId || undefined;
-        console.log(`[AI] Linked to parent: ${parentId}, thread: ${threadId}`);
+        if (lastInThread) {
+          parentId = lastInThread.id;
+          console.log(`[AI] ThreadKey provided. Linking to last article in thread: ${parentId}`);
+        } else {
+          console.log(`[AI] ThreadKey provided but no existing thread found. Creating new thread with key: ${threadId}`);
+        }
       } else {
-        console.log(`[AI] Creating new thread`);
+        // Fallback to LLM-based threading by similarity/category
+        const existingArticles = await this.getExistingArticles(article.country, category);
+        console.log(`[AI] Found ${existingArticles.length} existing articles for threading analysis`);
+        const threadingDecision = await this.findThreading(
+          article.title,
+          article.content.substring(0, 1000),
+          category,
+          existingArticles
+        );
+        console.log(`[AI] Threading decision: ${threadingDecision}`);
+        if (threadingDecision !== 'NEW_THREAD') {
+          const cleaned = threadingDecision.replace(/[`"'\s]/g, '').trim();
+          const matchById = existingArticles.find(a => a.id === cleaned);
+          if (matchById) {
+            parentId = matchById.id;
+          } else {
+            const matchByDna = existingArticles.find(a => a.dnaCode === cleaned);
+            if (matchByDna) {
+              parentId = matchByDna.id;
+            } else {
+              const dbByDna = await prisma.article.findFirst({
+                where: { dnaCode: cleaned },
+                select: { id: true, threadId: true }
+              });
+              if (dbByDna) {
+                parentId = dbByDna.id;
+                threadId = dbByDna.threadId || undefined;
+              }
+            }
+          }
+          if (parentId) {
+            const parentArticle = await prisma.article.findUnique({ where: { id: parentId } });
+            threadId = threadId || parentArticle?.threadId || undefined;
+            console.log(`[AI] Linked to parent: ${parentId}, thread: ${threadId}`);
+          } else {
+            console.log(`[AI] Could not resolve threading decision to a valid parent; creating NEW_THREAD`);
+          }
+        } else {
+          console.log(`[AI] Creating new thread`);
+        }
       }
-      
+       
       console.log(`[AI] Processing complete for: ${dnaCode}`);
       return {
         ...article,
         category,
         dnaCode,
-        summary,
+        summary: finalSummary,
         parentId,
         threadId,
       };
@@ -265,6 +313,17 @@ export class NewsProcessor {
     return articles.map(article => 
       `ID: ${article.id}\nTitle: ${article.title}\nSummary: ${article.summary}\nDNA: ${article.dnaCode}\nDate: ${article.publishedAt.toISOString().split('T')[0]}\n---`
     ).join('\n');
+  }
+
+  private normalizeOrFallbackSummary(title: string, content: string, summaryCandidate: string | undefined): string {
+    const cleaned = (summaryCandidate || '').toString().trim();
+    if (cleaned.length >= 10) return cleaned;
+    // Fallback: take first 2 sentences or first 300 chars from content
+    const text = (content || '').toString().replace(/\s+/g, ' ').trim();
+    if (!text) return title; // last resort
+    const sentences = text.split(/(?<=[.!?])\s+/).slice(0, 2).join(' ');
+    const fallback = sentences && sentences.length >= 30 ? sentences : text.substring(0, 300);
+    return fallback;
   }
 }
 

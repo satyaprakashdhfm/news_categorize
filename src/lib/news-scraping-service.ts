@@ -1,9 +1,10 @@
-import { brightDataMCP } from './brightdata-mcp';
+import { tavily } from '@tavily/core';
 import { newsProcessor, NewsArticle, ProcessedArticle } from './langchain-agents';
 import { PrismaClient } from '@prisma/client';
 import { EventEmitter } from 'events';
 
 const prisma = new PrismaClient();
+const tvly = tavily({ apiKey: process.env.TVLY_API_KEY as string });
 
 export interface ScrapingStats {
   totalArticlesFound: number;
@@ -26,6 +27,9 @@ export interface ScrapingProgress {
   stats: ScrapingStats;
 }
 
+export type SupportedCountry = 'USA' | 'RUSSIA' | 'INDIA' | 'CHINA' | 'JAPAN';
+export const SUPPORTED_COUNTRIES: readonly SupportedCountry[] = ['USA', 'RUSSIA', 'INDIA', 'CHINA', 'JAPAN'];
+
 export class NewsScrapingService extends EventEmitter {
   private isRunning = false;
   private stats: ScrapingStats = {
@@ -41,6 +45,17 @@ export class NewsScrapingService extends EventEmitter {
 
   constructor() {
     super();
+    // Patch console.log to suppress [DB] logs unless explicitly enabled via env var
+    const originalLog = console.log.bind(console);
+    console.log = (...args: any[]) => {
+      if (typeof args[0] === 'string' && args[0].startsWith('[DB]')) {
+        if (process.env.SHOW_DB_LOGS === 'true') {
+          originalLog(...args);
+        }
+      } else {
+        originalLog(...args);
+      }
+    };
   }
 
   async startWorldwideNewsScraping(): Promise<void> {
@@ -76,124 +91,207 @@ export class NewsScrapingService extends EventEmitter {
   }
 
   private async initializeScraping() {
-    this.emitProgress('initializing', 0, 'Initializing Bright Data MCP connection...');
-    
-    await brightDataMCP.initialize();
-    
-    this.emitProgress('initializing', 10, 'MCP connection established');
+    this.emitProgress('initializing', 0, 'Initializing Tavily client...');
+    // Tavily SDK uses API key; no explicit init needed
+    this.emitProgress('initializing', 10, 'Tavily client ready');
   }
 
   private async performWorldwideScraping() {
-    const supportedCountries = brightDataMCP.getSupportedCountries();
-    const totalCountries = supportedCountries.length;
+    console.log(`[SCRAPER] Starting worldwide scraping using Tavily`);
+    this.emitProgress('searching', 15, `Searching latest news with Tavily...`);
 
-    console.log(`[SCRAPER] Starting worldwide scraping across ${totalCountries} countries`);
-    console.log(`[SCRAPER] Supported countries: ${supportedCountries.join(', ')}`);
-    this.emitProgress('searching', 15, `Starting search across ${totalCountries} countries...`);
+    // Simple search like user's example
+    const response = await tvly.search('India latest news', {
+      maxResults: 10
+    });
 
-    // Search for news across all countries
-    console.log(`[SCRAPER] Calling MCP searchWorldwideNews...`);
-    const allNews = await brightDataMCP.searchWorldwideNews('breaking news latest', 100);
-    this.stats.totalArticlesFound = allNews.length;
+    const articles = (response?.results || []).map((r: any) => ({
+      title: r.title,
+      url: r.url,
+      content: r.content,
+      country: this.detectCountryFromUrl(r.url) || 'INDIA'
+    }));
 
-    console.log(`[SCRAPER] MCP returned ${allNews.length} total articles`);
-    console.log(`[SCRAPER] Sample articles from MCP:`, allNews.slice(0, 2).map(n => ({ 
-      title: n.title, 
-      url: n.url, 
-      country: n.detectedCountry || n.country 
-    })));
-    this.emitProgress('searching', 30, `Found ${allNews.length} articles worldwide`);
-
-    if (allNews.length === 0) {
-      console.log(`[SCRAPER] ❌ No articles found by MCP! Scraping will complete with 0 results.`);
+    this.stats.totalArticlesFound = articles.length;
+    console.log(`[SCRAPER] Found ${articles.length} articles`);
+    
+    if (articles.length === 0) {
+      console.log(`[SCRAPER] No articles found`);
       return;
     }
 
-    // Process articles in batches
-    const batchSize = 5;
-    const totalBatches = Math.ceil(allNews.length / batchSize);
+    this.emitProgress('processing', 50, `Processing ${articles.length} articles...`);
 
-    console.log(`[SCRAPER] Processing ${allNews.length} articles in ${totalBatches} batches of ${batchSize}`);
-    
-    for (let i = 0; i < allNews.length; i += batchSize) {
-      const batch = allNews.slice(i, i + batchSize);
-      const currentBatch = Math.floor(i / batchSize) + 1;
-      
-      console.log(`[SCRAPER] Processing batch ${currentBatch}/${totalBatches} with ${batch.length} articles`);
-      this.emitProgress('scraping', 30 + (currentBatch / totalBatches) * 40, 
-        `Processing batch ${currentBatch}/${totalBatches}...`);
-
-      await this.processBatch(batch);
-      console.log(`[SCRAPER] Completed batch ${currentBatch}/${totalBatches}. Stats: processed=${this.stats.articlesProcessed}, skipped=${this.stats.articlesSkipped}, errors=${this.stats.errors}`);
-    }
-    
-    console.log(`[SCRAPER] ✅ Worldwide scraping complete!`);
-    console.log(`[SCRAPER] Final stats: ${this.stats.articlesProcessed} processed, ${this.stats.articlesSkipped} skipped, ${this.stats.errors} errors`);
-  }
-
-  private async processBatch(newsItems: any[]) {
-    const promises = newsItems.map(async (newsItem) => {
+    // Process each article
+    for (const article of articles) {
       try {
-        console.log(`Processing article: ${newsItem.title || 'Untitled'} from ${newsItem.url}`);
+        console.log(`Processing: ${article.title}`);
         
-        // Check if article already exists
-        const existingArticle = await prisma.article.findFirst({
-          where: { sourceUrl: newsItem.url }
+        // Check if exists
+        const existing = await prisma.article.findFirst({
+          where: { sourceUrl: article.url }
         });
-
-        if (existingArticle) {
-          console.log(`Skipping existing article: ${newsItem.url}`);
-          this.stats.articlesSkipped++;
-          return;
-        }
-
-        // Scrape full article content
-        this.emitProgress('scraping', null, `Scraping: ${newsItem.title?.substring(0, 50)}...`);
-        console.log(`Scraping content from: ${newsItem.url}`);
-        const content = await brightDataMCP.scrapeArticle(newsItem.url);
-
-        if (!content || content.length < 100) {
-          console.log(`Content too short or empty for ${newsItem.url}: ${content?.length || 0} chars`);
-          this.stats.articlesSkipped++;
-          return;
-        }
-
-        console.log(`Scraped ${content.length} characters from ${newsItem.url}`);
         
-        // Create NewsArticle object
-        const article: NewsArticle = {
-          title: newsItem.title || 'Untitled',
-          content: content,
-          sourceUrl: newsItem.url,
-          publishedAt: new Date(newsItem.date || Date.now()),
-          country: newsItem.detectedCountry || this.detectCountryFromUrl(newsItem.url)
+        if (existing) {
+          console.log(`Skipping existing: ${article.url}`);
+          this.stats.articlesSkipped++;
+          continue;
+        }
+
+        // Get full content
+        const fullContent = await this.extractContent(article.url);
+        if (!fullContent || fullContent.length < 100) {
+          console.log(`Content too short: ${article.url}`);
+          this.stats.articlesSkipped++;
+          continue;
+        }
+
+        // Process with Gemini
+        const newsArticle: NewsArticle = {
+          title: article.title,
+          content: fullContent,
+          sourceUrl: article.url,
+          publishedAt: new Date(),
+          country: this.normalizeCountry(article.country)
         };
 
-        // Process with AI
-        this.emitProgress('processing', null, `AI processing: ${article.title.substring(0, 50)}...`);
-        console.log(`Starting AI processing for: ${article.title}`);
-        const processedArticle = await newsProcessor.processArticle(article);
-        console.log(`AI processing complete. Category: ${processedArticle.category}, DNA: ${processedArticle.dnaCode}`);
-
-        // Save to database
-        console.log(`Saving to database: ${processedArticle.dnaCode}`);
-        await this.saveProcessedArticle(processedArticle);
-        console.log(`Successfully saved: ${processedArticle.dnaCode}`);
-
+        const processed = await newsProcessor.processArticle(newsArticle);
+        await this.saveProcessedArticle(processed);
+        
         this.stats.articlesProcessed++;
-        this.updateStatsFromArticle(processedArticle);
-
+        this.updateStatsFromArticle(processed);
+        
+        console.log(`✅ Saved: ${processed.dnaCode}`);
+        
       } catch (error) {
-        console.error(`Error processing article ${newsItem.url}:`, error);
-        if (error instanceof Error) {
-          console.error(`Error details: ${error.message}`);
-          console.error(`Stack trace: ${error.stack}`);
-        }
+        console.error(`Error processing ${article.url}:`, error);
         this.stats.errors++;
       }
-    });
+    }
+  }
 
-    await Promise.all(promises);
+  async startCountryTopicScraping(params: {
+    countries: ReadonlyArray<SupportedCountry>;
+    topics: ReadonlyArray<string>;
+    date: string; // e.g., 03-09-2025
+  }): Promise<void> {
+    if (this.isRunning) {
+      throw new Error('Scraping is already running');
+    }
+
+    this.isRunning = true;
+    this.resetStats();
+
+    try {
+      await this.initializeScraping();
+      console.log(`[SCRAPER] Starting country-topic scraping using Tavily`);
+      const { countries, topics, date } = params;
+
+      // Mapping topic keywords to category codes
+      const topicToCategory = (topic: string): string => {
+        const t = topic.toLowerCase();
+        if (t.includes('polit')) return 'POL';
+        if (t.includes('econom') || t.includes('finance') || t.includes('business')) return 'ECO';
+        if (t.includes('societ') || t.includes('culture')) return 'SOC';
+        if (t.includes('tech') || t.includes('ai')) return 'TEC';
+        if (t.includes('env') || t.includes('climate')) return 'ENV';
+        if (t.includes('health') || t.includes('covid') || t.includes('medical')) return 'HEA';
+        if (t.includes('sport') || t.includes('cricket') || t.includes('football')) return 'SPO';
+        if (t.includes('secur') || t.includes('defence') || t.includes('defense') || t.includes('milit')) return 'SEC';
+        return 'ECO';
+      };
+
+      const countryName = (code: string): string => {
+        switch (code) {
+          case 'USA': return 'United States';
+          case 'RUSSIA': return 'Russia';
+          case 'INDIA': return 'India';
+          case 'CHINA': return 'China';
+          case 'JAPAN': return 'Japan';
+          default: return code;
+        }
+      };
+
+      const combos: Array<{ country: string; topic: string; category: string; query: string }> = [];
+      for (const c of countries) {
+        for (const topic of topics) {
+          const category = topicToCategory(topic);
+          const query = `${countryName(c)} ${topic} trending topics on ${date}`;
+          combos.push({ country: c, topic, category, query });
+        }
+      }
+
+      this.emitProgress('searching', 20, `Searching ${combos.length} country-topic queries...`);
+
+      for (const combo of combos) {
+        try {
+          console.log(`[SCRAPER] Query: ${combo.query}`);
+          const response = await tvly.search(combo.query, { maxResults: 5 });
+          const results = (response?.results || []).slice(0, 5);
+          this.stats.totalArticlesFound += results.length;
+
+          const articles = results.map((r: any) => ({
+            title: r.title,
+            url: r.url,
+            content: r.content,
+            country: combo.country,
+          }));
+
+          // limit to 2 new articles per combo
+          let processedForCombo = 0;
+          for (const article of articles) {
+            if (processedForCombo >= 2) break;
+
+            try {
+              // Skip if exists
+              const existing = await prisma.article.findFirst({ where: { sourceUrl: article.url } });
+              if (existing) {
+                console.log(`Skipping existing: ${article.url}`);
+                this.stats.articlesSkipped++;
+                continue;
+              }
+
+              const fullContent = await this.extractContent(article.url);
+              if (!fullContent || fullContent.length < 100) {
+                console.log(`Content too short: ${article.url}`);
+                this.stats.articlesSkipped++;
+                continue;
+              }
+
+              const newsArticle: NewsArticle = {
+                title: article.title,
+                content: fullContent,
+                sourceUrl: article.url,
+                publishedAt: new Date(),
+                country: this.normalizeCountry(article.country),
+              };
+
+              // Deterministic thread key per country-topic (no date) for similarity-based topic threading
+              const topicSlug = combo.topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+              const threadKey = `${combo.country}-${topicSlug}`;
+              const processed = await newsProcessor.processArticle(newsArticle, { forceCategory: combo.category, threadKey });
+              await this.saveProcessedArticle(processed);
+              this.stats.articlesProcessed++;
+              this.updateStatsFromArticle(processed);
+              processedForCombo++;
+              console.log(`✅ Saved: ${processed.dnaCode}`);
+            } catch (err) {
+              console.error(`Error processing ${article.url}:`, err);
+              this.stats.errors++;
+            }
+          }
+        } catch (err) {
+          console.error(`[SCRAPER] Error for query '${combo.query}':`, err);
+          this.stats.errors++;
+        }
+      }
+
+      this.completeScraping();
+    } catch (error) {
+      this.handleScrapingError(error);
+    } finally {
+      this.isRunning = false;
+    }
   }
 
   private async saveProcessedArticle(article: ProcessedArticle) {
@@ -210,31 +308,66 @@ export class NewsScrapingService extends EventEmitter {
     console.log(`[DB] - Thread ID: ${article.threadId || 'none'}`);
     console.log(`[DB] - Parent ID: ${article.parentId || 'none'}`);
 
-    try {
-    await prisma.article.create({
-      data: {
-        title: article.title,
-        content: article.content,
-        summary: article.summary,
-        sourceUrl: article.sourceUrl,
-        publishedAt: article.publishedAt,
-        country: article.country as any,
-        category: article.category as any,
-        dnaCode: article.dnaCode,
-        threadId: article.threadId,
-        parentId: article.parentId,
-        year: new Date().getFullYear(),
-        sequenceNum: parseInt(article.dnaCode.split('-')[3]) || 1
+    // Validate required fields before saving
+    if (!article.title || !article.content || !article.dnaCode || !article.summary) {
+      throw new Error(`Missing required fields: title=${!!article.title}, content=${!!article.content}, dnaCode=${!!article.dnaCode}, summary=${!!article.summary}`);
+    }
+
+    // Retry logic for database operations
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[DB] Save attempt ${attempt}/${maxRetries} for: ${article.dnaCode}`);
+        
+        const savedArticle = await prisma.article.create({
+          data: {
+            title: article.title.trim(),
+            content: article.content.trim(),
+            summary: article.summary.trim(),
+            sourceUrl: article.sourceUrl,
+            publishedAt: article.publishedAt,
+            country: article.country as any,
+            category: article.category as any,
+            dnaCode: article.dnaCode,
+            threadId: article.threadId,
+            parentId: article.parentId,
+            year: new Date().getFullYear(),
+            sequenceNum: parseInt(article.dnaCode.split('-')[3]) || 1
+          }
+        });
+        
+        console.log(`[DB] ✅ Successfully saved article: ${article.dnaCode} (ID: ${savedArticle.id})`);
+        return savedArticle;
+        
+      } catch (dbError) {
+        lastError = dbError as Error;
+        console.error(`[DB] ❌ Save attempt ${attempt}/${maxRetries} failed for ${article.dnaCode}:`, dbError);
+        
+        if (dbError instanceof Error) {
+          console.error(`[DB] Error message: ${dbError.message}`);
+          
+          // Check for specific error types
+          if (dbError.message.includes('Unique constraint')) {
+            console.log(`[DB] Duplicate article detected: ${article.dnaCode} - skipping`);
+            return null; // Don't retry for duplicates
+          }
+          
+          if (dbError.message.includes('Connection')) {
+            console.log(`[DB] Connection error - will retry in ${attempt * 1000}ms`);
+            if (attempt < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+              continue;
+            }
+          }
+        }
+        
+        if (attempt === maxRetries) {
+          console.error(`[DB] All ${maxRetries} save attempts failed for ${article.dnaCode}`);
+          throw lastError;
+        }
       }
-    });
-    console.log(`[DB] Successfully saved article: ${article.dnaCode}`);
-    } catch (dbError) {
-      console.error(`[DB] Failed to save article ${article.dnaCode}:`, dbError);
-      if (dbError instanceof Error) {
-        console.error(`[DB] Error message: ${dbError.message}`);
-        console.error(`[DB] Error stack: ${dbError.stack}`);
-      }
-      throw dbError;
     }
   }
 
@@ -249,12 +382,35 @@ export class NewsScrapingService extends EventEmitter {
   }
 
   private detectCountryFromUrl(url: string): string {
-    const domain = new URL(url).hostname.toLowerCase();
-    
+    const u = new URL(url);
+    const domain = u.hostname.toLowerCase();
+    // Google News / Google domains with regional signals
+    if (domain.includes('news.google') || domain.includes('google.')) {
+      // Try query params first
+      const gl = (u.searchParams.get('gl') || '').toUpperCase();
+      const ceid = (u.searchParams.get('ceid') || '').toUpperCase(); // e.g., IN:en
+      const region = gl || (ceid.split(':')[0] || '');
+      const tld = domain.split('.').pop(); // e.g., 'in'
+      const code = region || (tld === 'in' ? 'IN' : '');
+      const map: Record<string, string> = { US: 'USA', IN: 'INDIA', GB: 'UK', AU: 'AUSTRALIA', BR: 'BRAZIL', CN: 'CHINA', JP: 'JAPAN', DE: 'GERMANY', FR: 'FRANCE', RU: 'RUSSIA' };
+      if (code && map[code]) return map[code];
+    }
+     
     if (domain.includes('cnn.com') || domain.includes('nytimes.com') || domain.includes('wsj.com')) return 'USA';
     if (domain.includes('bbc.com') || domain.includes('theguardian.com')) return 'UK';
     if (domain.includes('rt.com') || domain.includes('tass.ru')) return 'RUSSIA';
-    if (domain.includes('timesofindia.com') || domain.includes('hindustantimes.com')) return 'INDIA';
+    if (
+      domain.includes('timesofindia.com') ||
+      domain.includes('economictimes.com') ||
+      domain.includes('hindustantimes.com') ||
+      domain.includes('thehindu.com') ||
+      domain.includes('indianexpress.com') ||
+      domain.includes('livemint.com') ||
+      domain.includes('business-standard.com') ||
+      domain.includes('ndtv.com') ||
+      domain.includes('news18.com') ||
+      domain.includes('hindubusinessline.com')
+    ) return 'INDIA';
     if (domain.includes('xinhua') || domain.includes('chinadaily.com')) return 'CHINA';
     if (domain.includes('japantimes.co.jp') || domain.includes('asahi.com')) return 'JAPAN';
     if (domain.includes('dw.com') || domain.includes('spiegel.de')) return 'GERMANY';
@@ -263,6 +419,38 @@ export class NewsScrapingService extends EventEmitter {
     if (domain.includes('abc.net.au') || domain.includes('smh.com.au')) return 'AUSTRALIA';
     
     return 'UNKNOWN';
+  }
+
+  private normalizeCountry(country: string | undefined | null): any {
+    // Ensure returned value matches Prisma enum Country
+    const normalized = (country || '').toString().toUpperCase();
+    const allowed = new Set(['USA','RUSSIA','INDIA','CHINA','JAPAN','UK','GERMANY','FRANCE','BRAZIL','AUSTRALIA']);
+    if (allowed.has(normalized)) return normalized as any;
+    // Default for India-focused scraping session
+    return 'INDIA' as any;
+  }
+
+  private async extractContent(url: string): Promise<string | null> {
+    try {
+      const resp = await tvly.extract(
+        [url],
+        {
+          extractDepth: 'basic',
+          format: 'text',
+          includeImages: false,
+          timeout: 60,
+        }
+      );
+      const item = resp?.results?.[0];
+      const content: string | undefined = typeof item?.rawContent === 'string' ? item.rawContent : undefined;
+      if (!content || content.length < 1) {
+        return null;
+      }
+      return content;
+    } catch (e) {
+      console.error(`[TAVILY] Extract failed for ${url}:`, e);
+      return null;
+    }
   }
 
   private completeScraping() {
@@ -329,10 +517,14 @@ export class NewsScrapingService extends EventEmitter {
   }
 
   async getStatsOverview() {
-    console.log(`[DB] Fetching stats overview...`);
+    if (!this.isRunning) {
+      console.log(`[DB] Fetching stats overview...`);
+    }
     try {
     const totalArticles = await prisma.article.count();
-    console.log(`[DB] Total articles in database: ${totalArticles}`);
+    if (!this.isRunning) {
+      console.log(`[DB] Total articles in database: ${totalArticles}`);
+    }
     
     const countryCounts = await prisma.article.groupBy({
       by: ['country'],
@@ -345,7 +537,9 @@ export class NewsScrapingService extends EventEmitter {
         }
       }
     });
-    console.log(`[DB] Articles by country:`, countryCounts);
+    if (!this.isRunning) {
+      console.log(`[DB] Articles by country:`, countryCounts);
+    }
 
     const categoryCounts = await prisma.article.groupBy({
       by: ['category'],
@@ -358,7 +552,9 @@ export class NewsScrapingService extends EventEmitter {
         }
       }
     });
-    console.log(`[DB] Articles by category:`, categoryCounts);
+    if (!this.isRunning) {
+      console.log(`[DB] Articles by category:`, categoryCounts);
+    }
 
     const recentArticles = await prisma.article.count({
       where: {
@@ -367,7 +563,9 @@ export class NewsScrapingService extends EventEmitter {
         }
       }
     });
-    console.log(`[DB] Recent articles (24h): ${recentArticles}`);
+    if (!this.isRunning) {
+      console.log(`[DB] Recent articles (24h): ${recentArticles}`);
+    }
 
     return {
       totalArticles,

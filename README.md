@@ -15,8 +15,8 @@ A global news platform with evolving story threads, country-by-country organizat
 
 - **Frontend**: Next.js 15, React 18, TypeScript, Tailwind CSS
 - **Backend**: Node.js, Prisma ORM, PostgreSQL
-- **AI Processing**: LangChain with OpenAI GPT-4
-- **Web Scraping**: Bright Data MCP (Model Context Protocol)
+- **AI Processing**: LangChain with Google Gemini
+- **Web Scraping**: Tavily Search + Extract
 - **Styling**: Tailwind CSS with custom design system
 
 ## 🚀 Quick Start
@@ -25,8 +25,8 @@ A global news platform with evolving story threads, country-by-country organizat
 
 - Node.js 18+ 
 - PostgreSQL database
-- OpenAI API key
-- Bright Data account (optional for scraping)
+- Google API key
+- Tavily API key
 
 ### Installation
 
@@ -49,10 +49,8 @@ A global news platform with evolving story threads, country-by-country organizat
    Fill in your environment variables:
    ```env
    DATABASE_URL="postgresql://username:password@localhost:5432/living_world_stories"
-   OPENAI_API_KEY="your_openai_api_key_here"
-   BRIGHT_DATA_API_KEY="your_bright_data_api_key"
-   BRIGHT_DATA_USERNAME="your_bright_data_username"
-   BRIGHT_DATA_PASSWORD="your_bright_data_password"
+   GOOGLE_API_KEY="your_google_ai_studio_api_key_here"
+   TVLY_API_KEY="your_tavily_api_key_here"
    ```
 
 4. **Set up the database**
@@ -85,7 +83,7 @@ src/
 │   ├── StoryThread.tsx    # Story threading UI
 │   └── CategoryFilter.tsx # Category filtering
 ├── lib/                   # Utility libraries
-│   ├── brightdata-mcp.ts  # Bright Data integration
+│   ├── news-scraping-service.ts  # Tavily search + extract integration
 │   └── langchain-agents.ts # AI processing agents
 └── prisma/
     └── schema.prisma      # Database schema
@@ -136,7 +134,7 @@ The platform automatically identifies related stories using AI analysis:
 
 ## 🤖 AI Processing Pipeline
 
-1. **Web Scraping**: Bright Data MCP collects articles from trusted sources
+1. **Web Scraping**: Tavily API collects and extracts articles from trusted sources
 2. **Categorization**: LangChain agents classify articles into 8 categories
 3. **Summarization**: AI generates concise 2-3 sentence summaries
 4. **DNA Generation**: Automatic assignment of unique tracking codes
@@ -186,20 +184,19 @@ Make sure to:
 1. Set up your PostgreSQL database
 2. Configure environment variables
 3. Run database migrations
-4. Set up Bright Data MCP integration
+4. Set TVLY_API_KEY environment variable
 
 ## 🔑 API Keys Setup
 
-### OpenAI API Key
-1. Visit [OpenAI Platform](https://platform.openai.com/)
+### Google API Key
+1. Visit [Google Cloud Console](https://console.cloud.google.com/)
 2. Create an account and generate an API key
 3. Add to your `.env` file
 
-### Bright Data Setup
-1. Sign up at [Bright Data](https://brightdata.com/)
-2. Get your API credentials
-3. Follow the MCP integration guide
-4. Add credentials to your `.env` file
+### Tavily API Setup
+1. Sign up at [Tavily](https://app.tavily.com)
+2. Copy your API key
+3. Add `TVLY_API_KEY` to your `.env` file
 
 ## 📈 Future Enhancements
 

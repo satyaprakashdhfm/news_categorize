@@ -1,0 +1,114 @@
+{
+  "POL": [
+    {
+      "title": "Latest News, Photos, Videos on India Election - NDTV.COM",
+      "url": "https://www.ndtv.com/topic/india-election"
+    },
+    {
+      "title": "Parliament Monsoon Session News LIVE: Rajya Sabha returns the ...",
+      "url": "https://indianexpress.com/article/india/parliament-monsoon-session-live-updates-ec-grants-appointment-to-opposition-mps-for-interaction-10182181/"
+    },
+    {
+      "title": "Parliament Monsoon Session Highlights: Online Gaming Bill Passed ...",
+      "url": "https://www.ndtv.com/india-news/parliament-monsoon-session-live-updates-centres-bills-for-removal-of-pm-chief-ministers-sparks-row-9120792"
+    }
+  ],
+  "ECO": [
+    {
+      "title": "India to become third-largest economy soon, says RBI Governor ...",
+      "url": "https://www.livemint.com/economy/india-to-become-third-largest-economy-soon-says-rbi-governor-sanjay-malhotra-credits-pm-jan-dhan-yojana-11756562326293.html"
+    },
+    {
+      "title": "Reserve Bank of India - Business Standard",
+      "url": "https://www.business-standard.com/topic/reserve-bank-of-india"
+    },
+    {
+      "title": "Latest News Headlines, Videos and Photo Galleries on RBI",
+      "url": "https://www.business-standard.com/topic/rbi"
+    }
+  ],
+  "SOC": [
+    {
+      "title": "Caste system in India - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Caste_system_in_India"
+    },
+    {
+      "title": "Women's empowerment in India, from ancient period to modern time ...",
+      "url": "https://timesofindia.indiatimes.com/readersblog/scatteredthoughts/womens-empowerment-in-india-from-ancient-period-to-modern-time-period-46689/"
+    },
+    {
+      "title": "The Times of India: TOI - Breaking News, Latest News, India News ...",
+      "url": "https://timesofindia.indiatimes.com/"
+    }
+  ],
+  "TEC": [
+    {
+      "title": "26 Spacetech Startups Winning The Space Race For India - Inc42",
+      "url": "https://inc42.com/startups/to-infinity-beyond-indian-spacetech-startups-winning-space-race/"
+    },
+    {
+      "title": "How is AI reshaping India's infotech sector? | Explained - The Hindu",
+      "url": "https://www.thehindu.com/business/Industry/how-is-ai-reshaping-indias-infotech-sector-explained/article69914441.ece"
+    },
+    {
+      "title": "Why are Indian firms racing to build local AI? | Explained - The Hindu",
+      "url": "https://www.thehindu.com/sci-tech/technology/why-are-indian-firms-racing-to-build-local-ai-explained/article69307505.ece"
+    }
+  ],
+  "ENV": [
+    {
+      "title": "Environment Crisis: India's 2025 Report Reveals Alarming Climate ...",
+      "url": "https://www.downtoearth.org.in/environment/state-of-indias-environment-in-figures-2025-warns-of-worsening-climate-health-and-development-indicators"
+    },
+    {
+      "title": "India needs climate-resilient solutions to deal with its monsoon mayhem",
+      "url": "https://www.downtoearth.org.in/climate-change/india-urgently-needs-climate-resilient-solutions-to-deal-with-its-monsoon-mayhem"
+    },
+    {
+      "title": "The Indian renewable energy sector is becoming increasingly driven ...",
+      "url": "https://timesofindia.indiatimes.com/blogs/voices/the-indian-renewable-energy-sector-is-becoming-increasingly-driven-by-private-sector/"
+    }
+  ],
+  "HEA": [
+    {
+      "title": "Press Releases | Ministry of Health and Family Welfare | GOI",
+      "url": "https://www.mohfw.gov.in/?q=/press-info/7848"
+    },
+    {
+      "title": "Affordable and Accessible Healthcare for All - PIB",
+      "url": "https://www.pib.gov.in/PressNoteDetails.aspx?NoteId=154668&ModuleId=3"
+    },
+    {
+      "title": "COVID-19 management: The vaccination drive in India - PMC",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9069978/"
+    }
+  ],
+  "SPO": [
+    {
+      "title": "Indian Premier League (IPL) 2025 - Times of India",
+      "url": "https://timesofindia.indiatimes.com/sports/cricket/ipl"
+    },
+    {
+      "title": "Latest Cricket News - The Times of India",
+      "url": "https://timesofindia.indiatimes.com/sports/cricket"
+    },
+    {
+      "title": "IPL 2025 - The Indian Express",
+      "url": "https://indianexpress.com/section/sports/ipl/"
+    }
+  ],
+  "SEC": [
+    {
+      "title": "India-China relation: Behind talks table, how border tensions cooled ...",
+      "url": "https://indianexpress.com/article/india/india-china-relation-behind-talks-table-how-border-tensions-cooled-down-over-a-year-10222916/"
+    },
+    {
+      "title": "Cyber fraud complaints of over ₹10 lakh, lodged via helpline or ...",
+      "url": "https://www.thehindu.com/news/national/cyber-fraud-complaints-of-over-10-lakh-lodged-via-helpline-or-portal-to-automatically-convert-into-firs/article69594649.ece"
+    },
+    {
+      "title": "Cyber Crime Police issue advisory on online scams - The Hindu",
+      "url": "https://www.thehindu.com/news/cities/chennai/cyber-crime-police-issue-advisory-on-online-scams/article69992629.ece"
+    }
+  ]
+}

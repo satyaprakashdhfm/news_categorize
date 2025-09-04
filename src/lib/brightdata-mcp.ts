@@ -21,6 +21,25 @@ interface NewsSource {
   categories: string[];
 }
 
+interface ArticleURL {
+  url: string;
+  title: string;
+  snippet?: string;
+  source: string;
+  country: string;
+}
+
+interface ArticleContent {
+  url: string;
+  title: string;
+  content: string;
+  publishedDate?: string;
+  author?: string;
+  source: string;
+  country: string;
+  category?: string;
+}
+
 export class BrightDataMCP extends EventEmitter {
   private process: any;
   private requestId = 0;
@@ -206,17 +225,19 @@ export class BrightDataMCP extends EventEmitter {
     });
   }
 
-  async searchWorldwideNews(query: string = 'breaking news', maxResults: number = 50): Promise<any[]> {
-    console.log(`[MCP] Starting worldwide news search with query: "${query}", maxResults: ${maxResults}`);
-    const allResults: any[] = [];
+  /**
+   * Step 1: Discovery - Find article URLs using search_engine
+   * Returns clean URLs without fetching content
+   */
+  async discoverArticleURLs(query: string = 'breaking news', maxResults: number = 50): Promise<ArticleURL[]> {
+    console.log(`[MCP] Discovering article URLs with query: "${query}", maxResults: ${maxResults}`);
+    const allURLs: ArticleURL[] = [];
     
     for (const source of this.newsSources) {
       try {
-        console.log(`[MCP] Searching ${source.country} news sources: ${source.sites.join(', ')}`);
+        console.log(`[MCP] Discovering URLs from ${source.country} news sources`);
         const siteQuery = `${query} site:${source.sites.join(' OR site:')}`;
-        console.log(`[MCP] Search query for ${source.country}: ${siteQuery}`);
         
-        // Use search_engine tool and parse HTML results
         const results = await this.sendRequest('tools/call', {
           name: 'search_engine',
           arguments: {
@@ -225,37 +246,206 @@ export class BrightDataMCP extends EventEmitter {
           }
         });
 
-        console.log(`[MCP] Raw results for ${source.country}:`, results);
-        
-        // Parse HTML search results to extract articles
-        let articleResults = [];
         if (results && results.results && Array.isArray(results.results)) {
-          articleResults = this.parseSearchResults(results.results, source.country);
-        } else if (results && typeof results === 'string') {
-          // Parse HTML content
-          articleResults = this.parseHTMLResults(results, source.country);
-        } else if (results && Array.isArray(results)) {
-          articleResults = this.parseSearchResults(results, source.country);
-        }
-        
-        if (articleResults.length > 0) {
-          console.log(`[MCP] Extracting ${articleResults.length} articles from ${source.country} results`);
-          const processedResults = articleResults.filter(result => result.url && result.title);
-          console.log(`[MCP] Found ${processedResults.length} articles from ${source.country}`);
-          console.log(`[MCP] Sample from ${source.country}:`, processedResults.slice(0, 2).map(r => ({ title: r.title, url: r.url })));
-          allResults.push(...processedResults);
-        } else {
-          console.log(`[MCP] No articles extracted from ${source.country} search results`);
+          const urls = this.extractURLsFromSearchResults(results.results, source.country);
+          allURLs.push(...urls);
+          console.log(`[MCP] Found ${urls.length} URLs from ${source.country}`);
         }
       } catch (error) {
-        console.error(`[MCP] Error searching ${source.country} news:`, error);
-        // Continue with other sources
+        console.error(`[MCP] Error discovering URLs from ${source.country}:`, error);
       }
     }
 
-    console.log(`[MCP] Total articles found across all countries: ${allResults.length}`);
-    console.log(`[MCP] Sample articles:`, allResults.slice(0, 3).map(a => ({ title: a.title, url: a.url, country: a.country })));
-    return allResults.slice(0, maxResults);
+    console.log(`[MCP] Total URLs discovered: ${allURLs.length}`);
+    return allURLs.slice(0, maxResults);
+  }
+
+  /**
+   * Step 2: Content Retrieval - Fetch full article content using scrape_as_markdown
+   * For static pages
+   */
+  async fetchArticleContent(url: string): Promise<ArticleContent | null> {
+    try {
+      console.log(`[MCP] Fetching article content from: ${url}`);
+      
+      const result = await this.sendRequest('tools/call', {
+        name: 'scrape_as_markdown',
+        arguments: {
+          url: url
+        }
+      });
+
+      if (!result || !result.content) {
+        console.warn(`[MCP] No content retrieved from ${url}`);
+        return null;
+      }
+
+      const content = result.content;
+      console.log(`[MCP] Retrieved ${content.length} characters from ${url}`);
+
+      // Parse title and other metadata from markdown content
+      const title = this.extractTitleFromMarkdown(content) || 'Untitled Article';
+      const source = this.getSourceFromURL(url);
+      const country = this.getCountryFromURL(url);
+
+      return {
+        url,
+        title,
+        content,
+        publishedDate: result.publishedDate || new Date().toISOString(),
+        author: result.author,
+        source,
+        country
+      };
+    } catch (error) {
+      console.error(`[MCP] Error fetching content from ${url}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Step 2 Alternative: Content Retrieval for dynamic pages using browser automation
+   */
+  async fetchDynamicArticleContent(url: string): Promise<ArticleContent | null> {
+    try {
+      console.log(`[MCP] Fetching dynamic article content from: ${url}`);
+      
+      // Navigate to the URL
+      await this.sendRequest('tools/call', {
+        name: 'scraping_browser_navigate',
+        arguments: {
+          url: url
+        }
+      });
+
+      // Wait for article content to load
+      await this.sendRequest('tools/call', {
+        name: 'scraping_browser_wait_for',
+        arguments: {
+          selector: 'article, .article-body, .content, main, [role="main"]',
+          timeout: 10000
+        }
+      });
+
+      // Get the rendered content
+      const result = await this.sendRequest('tools/call', {
+        name: 'scraping_browser_get_text',
+        arguments: {
+          selector: 'article, .article-body, .content, main'
+        }
+      });
+
+      if (!result || !result.text) {
+        // Fallback to getting all page text
+        const fallbackResult = await this.sendRequest('tools/call', {
+          name: 'scraping_browser_get_text',
+          arguments: {}
+        });
+        
+        if (!fallbackResult || !fallbackResult.text) {
+          console.warn(`[MCP] No content retrieved from dynamic page ${url}`);
+          return null;
+        }
+        
+        result.text = fallbackResult.text;
+      }
+
+      const content = result.text;
+      console.log(`[MCP] Retrieved ${content.length} characters from dynamic page ${url}`);
+
+      // Get title
+      const titleResult = await this.sendRequest('tools/call', {
+        name: 'scraping_browser_get_text',
+        arguments: {
+          selector: 'h1, title, .headline, .article-title'
+        }
+      });
+
+      const title = titleResult?.text || 'Untitled Article';
+      const source = this.getSourceFromURL(url);
+      const country = this.getCountryFromURL(url);
+
+      return {
+        url,
+        title,
+        content,
+        publishedDate: new Date().toISOString(),
+        source,
+        country
+      };
+    } catch (error) {
+      console.error(`[MCP] Error fetching dynamic content from ${url}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Step 3: Complete pipeline - Discovery + Content Retrieval
+   */
+  async getCompleteArticles(query: string = 'breaking news', maxResults: number = 20): Promise<ArticleContent[]> {
+    console.log(`[MCP] Starting complete article pipeline for query: "${query}"`);
+    
+    // Step 1: Discover URLs
+    const urls = await this.discoverArticleURLs(query, maxResults * 2); // Get more URLs than needed
+    
+    // Step 2: Fetch content for each URL
+    const articles: ArticleContent[] = [];
+    const maxConcurrent = 5; // Limit concurrent requests
+    
+    for (let i = 0; i < urls.length && articles.length < maxResults; i += maxConcurrent) {
+      const batch = urls.slice(i, i + maxConcurrent);
+      const promises = batch.map(async (urlInfo) => {
+        try {
+          const content = await this.fetchArticleContent(urlInfo.url);
+          return content;
+        } catch (error) {
+          console.error(`[MCP] Error processing ${urlInfo.url}:`, error);
+          return null;
+        }
+      });
+      
+      const results = await Promise.allSettled(promises);
+      const successfulResults = results
+        .filter(result => result.status === 'fulfilled' && result.value !== null)
+        .map(result => (result as PromiseFulfilledResult<ArticleContent>).value);
+      
+      articles.push(...successfulResults);
+      console.log(`[MCP] Processed batch ${Math.floor(i/maxConcurrent) + 1}, total articles: ${articles.length}`);
+    }
+
+    console.log(`[MCP] Complete pipeline finished with ${articles.length} articles`);
+    return articles;
+  }
+
+  /**
+   * Session monitoring - Track API usage
+   */
+  async getSessionStats(): Promise<any> {
+    try {
+      const stats = await this.sendRequest('tools/call', {
+        name: 'session_stats',
+        arguments: {}
+      });
+      
+      console.log('[MCP] Session stats:', stats);
+      return stats;
+    } catch (error) {
+      console.error('[MCP] Error getting session stats:', error);
+      return null;
+    }
+  }
+
+  // Legacy methods updated to use new architecture
+  async searchWorldwideNews(query: string = 'breaking news', maxResults: number = 50): Promise<any[]> {
+    const articles = await this.getCompleteArticles(query, maxResults);
+    return articles.map(article => ({
+      title: article.title,
+      url: article.url,
+      content: article.content.substring(0, 500) + '...', // Truncate for compatibility
+      date: article.publishedDate,
+      country: article.country,
+      detectedCountry: article.country
+    }));
   }
 
   async searchNewsByCountry(country: string, query: string = 'breaking news'): Promise<any[]> {
@@ -267,6 +457,7 @@ export class BrightDataMCP extends EventEmitter {
     console.log(`[MCP] Searching ${country} with query: ${query}`);
     const siteQuery = `${query} site:${source.sites.join(' OR site:')}`;
     
+    // Step 1: Discover URLs
     const results = await this.sendRequest('tools/call', {
       name: 'search_engine',
       arguments: {
@@ -275,76 +466,162 @@ export class BrightDataMCP extends EventEmitter {
       }
     });
 
-    console.log(`[MCP] Raw results for ${country}:`, results);
-    
-    // Parse HTML search results to extract articles
-    let articleResults = [];
-    if (results && results.results && Array.isArray(results.results)) {
-      articleResults = this.parseSearchResults(results.results, country);
-    } else if (results && typeof results === 'string') {
-      articleResults = this.parseHTMLResults(results, country);
-    } else if (results && Array.isArray(results)) {
-      articleResults = this.parseSearchResults(results, country);
+    if (!results || !results.results || !Array.isArray(results.results)) {
+      return [];
     }
+
+    const urls = this.extractURLsFromSearchResults(results.results, country);
     
-    const processedResults = articleResults.filter(result => result.url && result.title);
-      
-    console.log(`[MCP] Found ${processedResults.length} articles for ${country}`);
-    return processedResults;
-  }
-
-  async searchNewsByCategory(category: string, query: string = ''): Promise<any[]> {
-    const searchQuery = query || `${category} news`;
-    const allResults: any[] = [];
-
-    for (const source of this.newsSources) {
-      if (source.categories.includes(category.toLowerCase())) {
-        try {
-          const siteQuery = `${searchQuery} ${category} site:${source.sites.join(' OR site:')}`;
-          
-          const results = await this.sendRequest('tools/call', {
-            name: 'search_engine',
-            arguments: {
-              query: siteQuery,
-              max_results: 5
-            }
+    // Step 2: Fetch content for a subset
+    const articles: any[] = [];
+    for (const urlInfo of urls.slice(0, 10)) {
+      try {
+        const content = await this.fetchArticleContent(urlInfo.url);
+        if (content) {
+          articles.push({
+            title: content.title,
+            url: content.url,
+            content: content.content.substring(0, 500) + '...',
+            date: content.publishedDate,
+            country: content.country,
+            detectedCountry: content.country
           });
-
-          if (results && Array.isArray(results)) {
-            allResults.push(...results.map((result: any) => ({
-              ...result,
-              country: source.country,
-              category: category
-            })));
-          }
-        } catch (error) {
-          console.error(`Error searching ${category} news for ${source.country}:`, error);
         }
+      } catch (error) {
+        console.error(`[MCP] Error processing ${urlInfo.url}:`, error);
+      }
+    }
+    
+    console.log(`[MCP] Found ${articles.length} complete articles for ${country}`);
+    return articles;
+  }
+
+  async searchNewsByCategory(category: string, query: string = 'breaking news'): Promise<any[]> {
+    const supported = this.getSupportedCategories();
+    if (!supported.includes(category)) {
+      throw new Error(`Category ${category} not supported`);
+    }
+
+    // Collect all sites that publish this category across countries
+    const matchedSources = this.newsSources.filter(s => s.categories.includes(category));
+    const sites = matchedSources.flatMap(s => s.sites);
+    if (sites.length === 0) {
+      return [];
+    }
+
+    console.log(`[MCP] Searching category ${category} with query: ${query}`);
+    const siteQuery = `${query} ${category} site:${sites.join(' OR site:')}`;
+
+    // Step 1: Discover URLs
+    const results = await this.sendRequest('tools/call', {
+      name: 'search_engine',
+      arguments: {
+        query: siteQuery,
+        max_results: 20
+      }
+    });
+
+    if (!results || !results.results || !Array.isArray(results.results)) {
+      return [];
+    }
+
+    const urls = this.extractURLsFromSearchResults(results.results, 'GLOBAL');
+
+    // Step 2: Fetch content for a subset
+    const articles: any[] = [];
+    for (const urlInfo of urls.slice(0, 10)) {
+      try {
+        const content = await this.fetchArticleContent(urlInfo.url);
+        if (content) {
+          articles.push({
+            title: content.title,
+            url: content.url,
+            content: content.content.substring(0, 500) + '...',
+            date: content.publishedDate,
+            country: content.country,
+            detectedCountry: content.country,
+            category
+          });
+        }
+      } catch (error) {
+        console.error(`[MCP] Error processing ${urlInfo.url}:`, error);
       }
     }
 
-    return allResults;
+    console.log(`[MCP] Found ${articles.length} complete articles for category ${category}`);
+    return articles;
   }
 
-  async scrapeArticle(url: string): Promise<string> {
-    try {
-      console.log(`[MCP] Starting to scrape article: ${url}`);
-      const result = await this.sendRequest('tools/call', {
-        name: 'scrape_as_markdown',
-        arguments: {
-          url: url
-        }
-      });
-
-      const content = result?.content || result || '';
-      console.log(`[MCP] Scraped ${content.length} characters from ${url}`);
-      if (content.length < 100) {
-        console.log(`[MCP] WARNING: Very short content scraped from ${url}: "${content.substring(0, 200)}"`);
+  // Helper methods for new architecture
+  private extractURLsFromSearchResults(results: any[], country: string): ArticleURL[] {
+    const urls: ArticleURL[] = [];
+    
+    for (const result of results) {
+      if (result.url || result.link) {
+        const url = result.url || result.link;
+        const source = this.getSourceFromURL(url);
+        
+        urls.push({
+          url,
+          title: result.title || result.snippet || 'Untitled',
+          snippet: result.snippet || result.description,
+          source,
+          country
+        });
       }
-      return content;
-    } catch (error) {
-      console.error(`[MCP] Error scraping article ${url}:`, error);
-      throw error;
+    }
+    
+    return urls;
+  }
+
+  private extractTitleFromMarkdown(content: string): string | null {
+    // Look for markdown h1 headers or HTML title tags
+    const h1Match = content.match(/^#\s+(.+)$/m);
+    if (h1Match) {
+      return h1Match[1].trim();
+    }
+    
+    const titleMatch = content.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleMatch) {
+      return titleMatch[1].trim();
+    }
+    
+    // Look for first line that looks like a title
+    const lines = content.split('\n').filter(line => line.trim());
+    if (lines.length > 0) {
+      const firstLine = lines[0].trim();
+      if (firstLine.length > 10 && firstLine.length < 200) {
+        return firstLine;
+      }
+    }
+    
+    return null;
+  }
+
+  private getSourceFromURL(url: string): string {
+    try {
+      const hostname = new URL(url).hostname;
+      return hostname.replace('www.', '');
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  private getCountryFromURL(url: string): string {
+    const source = this.getSourceFromURL(url);
+    
+    for (const newsSource of this.newsSources) {
+      if (newsSource.sites.some(site => source.includes(site))) {
+        return newsSource.country;
+      }
+    }
+    
+    return 'UNKNOWN';
+  }
+
+  async close() {
+    if (this.process) {
+      this.process.kill();
     }
   }
 
@@ -358,69 +635,6 @@ export class BrightDataMCP extends EventEmitter {
       source.categories.forEach(cat => categories.add(cat));
     });
     return Array.from(categories);
-  }
-
-  async close() {
-    if (this.process) {
-      this.process.kill();
-    }
-  }
-
-  private parseSearchResults(results: any[], country: string): any[] {
-    return results.map(result => ({
-      title: result.title || result.snippet || 'Untitled',
-      url: result.url || result.link,
-      content: result.content || result.snippet || '',
-      date: result.date || new Date().toISOString(),
-      country: country,
-      detectedCountry: country
-    }));
-  }
-
-  private parseHTMLResults(htmlContent: string, country: string): any[] {
-    console.log(`[MCP] Parsing HTML content for ${country} (${htmlContent.length} chars)`);
-    const articles: any[] = [];
-    
-    // Extract URLs from HTML using regex patterns
-    const urlPatterns = [
-      /https?:\/\/[^\s<>"']+/g,
-      /href=["']([^"']+)["']/g
-    ];
-    
-    const foundUrls = new Set<string>();
-    
-    for (const pattern of urlPatterns) {
-      const matches = htmlContent.match(pattern);
-      if (matches) {
-        matches.forEach(match => {
-          let url = match;
-          if (match.startsWith('href=')) {
-            url = match.match(/href=["']([^"']+)["']/)?.[1] || '';
-          }
-          
-          // Filter for news site URLs
-          const newsSource = this.newsSources.find(s => s.country === country);
-          if (newsSource && newsSource.sites.some(site => url.includes(site))) {
-            foundUrls.add(url);
-          }
-        });
-      }
-    }
-    
-    // Convert URLs to article objects
-    Array.from(foundUrls).slice(0, 10).forEach((url, index) => {
-      articles.push({
-        title: `News Article ${index + 1}`,
-        url: url,
-        content: '',
-        date: new Date().toISOString(),
-        country: country,
-        detectedCountry: country
-      });
-    });
-    
-    console.log(`[MCP] Extracted ${articles.length} URLs from HTML for ${country}`);
-    return articles;
   }
 }
 

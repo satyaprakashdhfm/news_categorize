@@ -146,6 +146,9 @@ export default function NewsFeed({ country, categories }: NewsFeedProps) {
             filteredArticles.map((article) => (
               <NewsCard key={article.id} article={{
                 ...article,
+                imageUrl: article.imageUrl || undefined,
+                threadId: article.threadId || undefined,
+                parentId: article.parentId || undefined,
                 publishedAt: new Date(article.publishedAt),
                 children: [] // Will be populated by threading logic later
               }} />
@@ -155,6 +158,9 @@ export default function NewsFeed({ country, categories }: NewsFeedProps) {
             Object.entries(threadGroups).map(([threadId, threadArticles]) => (
               <StoryThread key={threadId} articles={threadArticles.map(article => ({
                 ...article,
+                imageUrl: article.imageUrl || undefined,
+                threadId: article.threadId || undefined,
+                parentId: article.parentId || undefined,
                 publishedAt: new Date(article.publishedAt),
                 children: []
               }))} />
