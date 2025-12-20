@@ -1,6 +1,6 @@
-# Living World Stories
+# Curio
 
-AI-powered news categorization platform with DNA-based article tracking and story threading.
+AI-powered global news intelligence platform with advanced categorization and story threading.
 
 ## Stack
 

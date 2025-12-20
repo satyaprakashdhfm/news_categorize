@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import CategoryFilter from '@/components/CategoryFilter';
 import NewsFeed from '@/components/NewsFeed';
+import GlobalMap from '@/components/GlobalMap';
 import { COUNTRIES, CATEGORIES } from '@/utils/helpers';
 import { TrendingUp } from 'lucide-react';
 import { articlesApi } from '@/services/api';
@@ -80,6 +81,11 @@ export default function HomePage() {
             </div>
           </div>
         )}
+
+        {/* Global Map */}
+        <div className="mb-8">
+          <GlobalMap stats={stats} />
+        </div>
 
         {/* Country Selector */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">

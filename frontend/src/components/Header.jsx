@@ -13,9 +13,9 @@ export default function Header() {
           <Link to="/" className="flex items-center space-x-4 hover:opacity-80 transition-opacity">
             <Globe className="h-10 w-10" />
             <div>
-              <h1 className="text-3xl font-bold">Living World Stories</h1>
+              <h1 className="text-3xl font-bold">Curio</h1>
               <p className="text-primary-100 text-sm">
-                Global News Categorization & Analysis
+                Global News Intelligence Platform
               </p>
             </div>
           </Link>

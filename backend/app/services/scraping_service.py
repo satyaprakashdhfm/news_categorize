@@ -19,6 +19,7 @@ class NewsScrapingService:
     
     def __init__(self):
         self.is_running = False
+        self.should_stop = False  # Flag to stop scraping gracefully
         self.stats = {
             "total_articles_found": 0,
             "articles_processed": 0,
@@ -46,6 +47,7 @@ class NewsScrapingService:
             raise Exception("Scraping is already running")
         
         self.is_running = True
+        self.should_stop = False
         self.stats["status"] = "running"
         self.stats["countries_processed"] = []
         self.stats["categories_found"] = []
@@ -59,10 +61,22 @@ class NewsScrapingService:
         
         try:
             for country_idx, country in enumerate(countries):
+                # Check if stop was requested
+                if self.should_stop:
+                    logger.info("[SCRAPER] Stop requested, terminating scraping")
+                    self.stats["status"] = "stopped"
+                    break
+                
                 country_name = self._get_country_name(country)
                 self.stats["countries_processed"].append(country)
                 
                 for topic_idx, topic in enumerate(topics):
+                    # Check if stop was requested
+                    if self.should_stop:
+                        logger.info("[SCRAPER] Stop requested, terminating scraping")
+                        self.stats["status"] = "stopped"
+                        break
+                        
                     logger.info(f"[SCRAPER] Searching: {country_name} - {topic}")
                     
                     # Rate limit: Wait before making API call (except first request)
@@ -278,10 +292,13 @@ class NewsScrapingService:
         """Convert country code to name"""
         country_map = {
             "USA": "United States",
-            "RUSSIA": "Russia",
-            "INDIA": "India",
             "CHINA": "China",
-            "JAPAN": "Japan"
+            "GERMANY": "Germany",
+            "INDIA": "India",
+            "JAPAN": "Japan",
+            "UK": "United Kingdom",
+            "FRANCE": "France",
+            "ITALY": "Italy"
         }
         return country_map.get(code, code)
 

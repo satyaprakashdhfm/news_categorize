@@ -2,11 +2,11 @@ import React from 'react';
 import { cn } from '@/utils/helpers';
 
 export default function CategoryFilter({ selectedCategories, onChange, categories }) {
-  const toggleCategory = (categoryCode) => {
-    if (selectedCategories.includes(categoryCode)) {
-      onChange(selectedCategories.filter(c => c !== categoryCode));
+  const toggleCategory = (categoryId) => {
+    if (selectedCategories.includes(categoryId)) {
+      onChange(selectedCategories.filter(c => c !== categoryId));
     } else {
-      onChange([...selectedCategories, categoryCode]);
+      onChange([...selectedCategories, categoryId]);
     }
   };
 
@@ -18,15 +18,16 @@ export default function CategoryFilter({ selectedCategories, onChange, categorie
       <div className="flex flex-wrap gap-2">
         {categories.map((category) => (
           <button
-            key={category.code}
-            onClick={() => toggleCategory(category.code)}
+            key={category.id}
+            onClick={() => toggleCategory(category.id)}
             className={cn(
               'px-4 py-2 rounded-full text-sm font-medium transition-all',
-              selectedCategories.includes(category.code)
-                ? category.color + ' ring-2 ring-offset-2 ring-primary-500'
+              selectedCategories.includes(category.id)
+                ? 'bg-primary-600 text-white ring-2 ring-offset-2 ring-primary-500'
                 : 'bg-secondary-100 text-secondary-600 hover:bg-secondary-200'
             )}
           >
+            <span className="mr-1">{category.icon}</span>
             {category.name}
           </button>
         ))}

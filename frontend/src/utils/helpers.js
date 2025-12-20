@@ -16,20 +16,19 @@ export const formatTimeAgo = (date) => {
 };
 
 export const COUNTRIES = [
-  { code: 'USA', name: 'United States', flag: '🇺🇸' },
-  { code: 'RUSSIA', name: 'Russia', flag: '🇷🇺' },
-  { code: 'INDIA', name: 'India', flag: '🇮🇳' },
-  { code: 'CHINA', name: 'China', flag: '🇨🇳' },
-  { code: 'JAPAN', name: 'Japan', flag: '🇯🇵' },
+  { code: 'USA', name: 'United States', flag: '🇺🇸', gdp: '$30.51T' },
+  { code: 'CHINA', name: 'China', flag: '🇨🇳', gdp: '$19.23T' },
+  { code: 'GERMANY', name: 'Germany', flag: '🇩��', gdp: '$4.74T' },
+  { code: 'INDIA', name: 'India', flag: '🇮🇳', gdp: '$4.19T' },
+  { code: 'JAPAN', name: 'Japan', flag: '🇯🇵', gdp: '$4.19T' },
+  { code: 'UK', name: 'United Kingdom', flag: '🇬🇧', gdp: '$3.84T' },
+  { code: 'FRANCE', name: 'France', flag: '🇫🇷', gdp: '$3.21T' },
+  { code: 'ITALY', name: 'Italy', flag: '🇮🇹', gdp: '$2.42T' },
 ];
 
 export const CATEGORIES = [
-  { code: 'POL', name: 'Politics & Governance', color: 'bg-red-100 text-red-700' },
-  { code: 'ECO', name: 'Economy & Business', color: 'bg-green-100 text-green-700' },
-  { code: 'SOC', name: 'Society & Culture', color: 'bg-purple-100 text-purple-700' },
-  { code: 'TEC', name: 'Technology & Science', color: 'bg-blue-100 text-blue-700' },
-  { code: 'ENV', name: 'Environment & Climate', color: 'bg-emerald-100 text-emerald-700' },
-  { code: 'HEA', name: 'Health & Medicine', color: 'bg-pink-100 text-pink-700' },
-  { code: 'SPO', name: 'Sports & Entertainment', color: 'bg-orange-100 text-orange-700' },
-  { code: 'SEC', name: 'Security & Conflict', color: 'bg-gray-100 text-gray-700' },
+  { id: 'POL', name: 'Policy & Governance', color: 'blue', icon: '⚖️' },
+  { id: 'ECO', name: 'Economy', color: 'green', icon: '📈' },
+  { id: 'BUS', name: 'Business', color: 'purple', icon: '💼' },
+  { id: 'TEC', name: 'Science & Technology', color: 'orange', icon: '🔬' },
 ];

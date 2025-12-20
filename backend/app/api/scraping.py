@@ -68,3 +68,22 @@ async def get_scraping_status():
         "is_running": news_scraping_service.is_running,
         "status": news_scraping_service.stats["status"]
     }
+
+
+@router.post("/stop")
+async def stop_scraping():
+    """Stop current scraping operation"""
+    try:
+        if not news_scraping_service.is_running:
+            raise HTTPException(status_code=400, detail="No scraping is currently running")
+        
+        news_scraping_service.should_stop = True
+        news_scraping_service.stats["status"] = "stopped"
+        
+        return {
+            "message": "Scraping stop requested",
+            "status": "stopped"
+        }
+    except Exception as e:
+        logger.error(f"Error stopping scraping: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

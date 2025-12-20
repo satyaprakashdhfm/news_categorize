@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
-    title="Living World Stories API",
-    description="News categorization and analysis API with LangGraph",
+    title="Curio API",
+    description="Global News Intelligence Platform with AI-powered analysis",
     version="2.0.0"
 )
 
@@ -44,7 +44,7 @@ app.include_router(scraping.router)
 async def root():
     """Root endpoint"""
     return {
-        "message": "Living World Stories API",
+        "message": "Curio API",
         "version": "2.0.0",
         "docs": "/docs"
     }

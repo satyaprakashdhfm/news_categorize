@@ -5,18 +5,16 @@ import { Play, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 export default function AdminPage() {
   const [selectedCountries, setSelectedCountries] = useState(['USA']);
-  const [selectedTopics, setSelectedTopics] = useState(['politics']);
+  const [selectedTopics, setSelectedTopics] = useState(['policy']);
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
   const topics = [
-    { id: 'politics', name: 'Politics' },
+    { id: 'policy', name: 'Policy & Governance' },
     { id: 'economy', name: 'Economy' },
-    { id: 'technology', name: 'Technology' },
-    { id: 'health', name: 'Health' },
-    { id: 'environment', name: 'Environment' },
-    { id: 'sports', name: 'Sports' },
+    { id: 'business', name: 'Business' },
+    { id: 'technology', name: 'Science & Technology' },
   ];
 
   const toggleCountry = (countryCode) => {
@@ -45,14 +43,32 @@ export default function AdminPage() {
         setResult(data.stats);
         
         // If still running, poll again
-        if (data.status === 'running') {
+        if (data.status === 'running' && isRunning) {
           setTimeout(pollProgress, 1000); // Poll every second
         } else {
+          // Scraping finished (completed, error, or idle)
           setIsRunning(false);
         }
       }
     } catch (err) {
       console.error('Error polling progress:', err);
+      setIsRunning(false);
+    }
+  };
+
+  const handleStopResearch = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/admin/scraping/stop', {
+        method: 'POST',
+      });
+      
+      if (response.ok) {
+        setIsRunning(false);
+        setError('Research stopped by user');
+      }
+    } catch (err) {
+      console.error('Error stopping research:', err);
+      setIsRunning(false);
     }
   };
 
@@ -102,9 +118,20 @@ export default function AdminPage() {
             <h1 className="text-3xl font-bold text-secondary-900 mb-2">
               News Research Admin
             </h1>
-            <p className="text-secondary-600 mb-8">
+            <p className="text-secondary-600 mb-4">
               Scrape and analyze news articles using AI-powered categorization
             </p>
+            
+            {/* API Quota Warning */}
+            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <div className="text-yellow-600 mt-0.5">⚠️</div>
+                <div className="text-sm text-yellow-800">
+                  <strong>Note:</strong> Google Gemini free tier has rate limits (15 requests/min, 1500/day). 
+                  If you hit the limit, the system will retry automatically or you can stop and try later.
+                </div>
+              </div>
+            </div>
 
             {/* Country Selection */}
             <div className="mb-8">
@@ -153,29 +180,26 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Start Button */}
+            {/* Start/Stop Button */}
             <div className="mb-8">
-              <button
-                onClick={handleStartResearch}
-                disabled={isRunning}
-                className={`w-full py-4 rounded-lg font-semibold text-lg transition-all flex items-center justify-center gap-3 ${
-                  isRunning
-                    ? 'bg-secondary-400 cursor-not-allowed'
-                    : 'bg-primary-600 hover:bg-primary-700 text-white shadow-lg hover:shadow-xl'
-                }`}
-              >
-                {isRunning ? (
-                  <>
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                    Researching...
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-6 w-6" />
-                    Start Research
-                  </>
-                )}
-              </button>
+              {isRunning ? (
+                <button
+                  onClick={handleStopResearch}
+                  className="w-full py-4 rounded-lg font-semibold text-lg transition-all flex items-center justify-center gap-3 bg-red-600 hover:bg-red-700 text-white shadow-lg hover:shadow-xl"
+                >
+                  <XCircle className="h-6 w-6" />
+                  Stop Research
+                </button>
+              ) : (
+                <button
+                  onClick={handleStartResearch}
+                  disabled={isRunning}
+                  className="w-full py-4 rounded-lg font-semibold text-lg transition-all flex items-center justify-center gap-3 bg-primary-600 hover:bg-primary-700 text-white shadow-lg hover:shadow-xl"
+                >
+                  <Play className="h-6 w-6" />
+                  Start Research
+                </button>
+              )}
             </div>
 
             {/* Error Display */}

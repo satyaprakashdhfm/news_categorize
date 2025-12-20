@@ -7,26 +7,20 @@ import enum
 
 class CountryEnum(str, enum.Enum):
     USA = "USA"
-    RUSSIA = "RUSSIA"
-    INDIA = "INDIA"
     CHINA = "CHINA"
+    GERMANY = "GERMANY"
+    INDIA = "INDIA"
     JAPAN = "JAPAN"
     UK = "UK"
-    GERMANY = "GERMANY"
     FRANCE = "FRANCE"
-    BRAZIL = "BRAZIL"
-    AUSTRALIA = "AUSTRALIA"
+    ITALY = "ITALY"
 
 
 class CategoryEnum(str, enum.Enum):
-    POL = "POL"  # Politics & Governance
-    ECO = "ECO"  # Economy & Business
-    SOC = "SOC"  # Society & Culture
-    TEC = "TEC"  # Technology & Science
-    ENV = "ENV"  # Environment & Climate
-    HEA = "HEA"  # Health & Medicine
-    SPO = "SPO"  # Sports & Entertainment
-    SEC = "SEC"  # Security & Conflict
+    POL = "POL"  # Policy & Governance
+    ECO = "ECO"  # Economy
+    BUS = "BUS"  # Business
+    TEC = "TEC"  # Science & Technology
 
 
 class Article(Base):
