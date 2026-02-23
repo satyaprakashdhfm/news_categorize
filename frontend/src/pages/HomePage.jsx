@@ -8,7 +8,7 @@ import { TrendingUp } from 'lucide-react';
 import { articlesApi } from '@/services/api';
 
 export default function HomePage() {
-  const [selectedCountry, setSelectedCountry] = useState('USA');
+  const [selectedCountry, setSelectedCountry] = useState('INDIA');
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [stats, setStats] = useState(null);
 
