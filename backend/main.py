@@ -17,6 +17,10 @@ logging.basicConfig(
     format='[%(levelname)s] %(name)s - %(message)s'
 )
 
+# Suppress noisy third-party loggers
+logging.getLogger("google_genai.models").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 # Create FastAPI app

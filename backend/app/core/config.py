@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: str
     TVLY_API_KEY: str
     
+    # Langfuse observability
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_BASE_URL: str = "https://cloud.langfuse.com"
+    
     # Server
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000

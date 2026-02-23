@@ -3,8 +3,33 @@ from google import genai
 from langgraph.graph import StateGraph, END
 from app.core.config import settings
 import logging
+import time
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Langfuse client — initialised once, optional (gracefully skipped if keys missing)
+# ---------------------------------------------------------------------------
+_langfuse = None
+
+def _get_langfuse():
+    global _langfuse
+    if _langfuse is not None:
+        return _langfuse
+    if not settings.LANGFUSE_SECRET_KEY or not settings.LANGFUSE_PUBLIC_KEY:
+        return None
+    try:
+        from langfuse import Langfuse
+        _langfuse = Langfuse(
+            secret_key=settings.LANGFUSE_SECRET_KEY,
+            public_key=settings.LANGFUSE_PUBLIC_KEY,
+            host=settings.LANGFUSE_BASE_URL,
+        )
+        logger.info("[LANGFUSE] Client initialised — observability active")
+    except Exception as e:
+        logger.warning(f"[LANGFUSE] Could not initialise client: {e}")
+        _langfuse = None
+    return _langfuse
 
 
 class NewsProcessingState(TypedDict):
@@ -25,11 +50,13 @@ class NewsProcessorGraph:
     """LangGraph-based news processor using Google Gemini"""
     
     def __init__(self):
-        """Initialize the news processor with Gemini LLM"""
+        """Initialize the news processor with Gemini and optional Langfuse tracing"""
         self.client = genai.Client(api_key=settings.GOOGLE_API_KEY)
         self.model = "gemini-3-flash-preview"
         self.graph = self._build_graph()
         logger.info("[LANGGRAPH] NewsProcessor initialized with Gemini")
+        # ensure Langfuse is reachable at startup
+        _get_langfuse()
     
     def _classify_category_node(self, state: NewsProcessingState) -> NewsProcessingState:
         """Node: Classify article category using LLM"""
@@ -37,19 +64,40 @@ class NewsProcessorGraph:
 
         prompt = (
             "You are a news categorization expert. Classify articles into exactly one of these categories: "
-            "POL (Politics), ECO (Economy), SOC (Society), TEC (Technology), ENV (Environment), "
-            "HEA (Health), SPO (Sports), SEC (Security). Return ONLY the 3-letter code.\n\n"
+            "POL (Politics & Governance), ECO (Economy & Finance), BUS (Business & Markets), TEC (Science & Technology). "
+            "Return ONLY the 3-letter code: POL, ECO, BUS, or TEC.\n\n"
             f"Title: {state['title']}\n\nContent: {state['content'][:2000]}"
         )
 
         try:
+            t0 = time.time()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
             )
+            latency_ms = int((time.time() - t0) * 1000)
             category = response.text.strip().upper()
 
-            valid_categories = ['POL', 'ECO', 'SOC', 'TEC', 'ENV', 'HEA', 'SPO', 'SEC']
+            # --- Langfuse: log generation ---
+            lf = _get_langfuse()
+            if lf:
+                usage = getattr(response, "usage_metadata", None)
+                lf.generation(
+                    name="classify_category",
+                    model=self.model,
+                    input=prompt,
+                    output=category,
+                    metadata={"country": state.get("country"), "title": state["title"][:80]},
+                    usage={
+                        "input": getattr(usage, "prompt_token_count", 0),
+                        "output": getattr(usage, "candidates_token_count", 0),
+                        "total": getattr(usage, "total_token_count", 0),
+                        "unit": "TOKENS",
+                    },
+                    latency=latency_ms,
+                )
+
+            valid_categories = ['POL', 'ECO', 'BUS', 'TEC']
             if category not in valid_categories:
                 logger.warning(f"[LANGGRAPH] Invalid category '{category}', defaulting to ECO")
                 category = 'ECO'
@@ -74,12 +122,33 @@ class NewsProcessorGraph:
         )
 
         try:
+            t0 = time.time()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
             )
+            latency_ms = int((time.time() - t0) * 1000)
             state['summary'] = response.text.strip()
             logger.info(f"[LANGGRAPH] Summary generated: {len(state['summary'])} chars")
+
+            # --- Langfuse: log generation ---
+            lf = _get_langfuse()
+            if lf:
+                usage = getattr(response, "usage_metadata", None)
+                lf.generation(
+                    name="generate_summary",
+                    model=self.model,
+                    input=prompt,
+                    output=state['summary'],
+                    metadata={"country": state.get("country"), "title": state["title"][:80]},
+                    usage={
+                        "input": getattr(usage, "prompt_token_count", 0),
+                        "output": getattr(usage, "candidates_token_count", 0),
+                        "total": getattr(usage, "total_token_count", 0),
+                        "unit": "TOKENS",
+                    },
+                    latency=latency_ms,
+                )
 
         except Exception as e:
             logger.error(f"[LANGGRAPH] Error generating summary: {e}")
@@ -113,13 +182,34 @@ class NewsProcessorGraph:
         )
 
         try:
+            t0 = time.time()
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
             )
+            latency_ms = int((time.time() - t0) * 1000)
             decision = response.text.strip()
             state['decision'] = decision
             logger.info(f"[LANGGRAPH] Threading decision: {decision}")
+
+            # --- Langfuse: log generation ---
+            lf = _get_langfuse()
+            if lf:
+                usage = getattr(response, "usage_metadata", None)
+                lf.generation(
+                    name="find_threading",
+                    model=self.model,
+                    input=prompt,
+                    output=decision,
+                    metadata={"country": state.get("country"), "title": state["title"][:80]},
+                    usage={
+                        "input": getattr(usage, "prompt_token_count", 0),
+                        "output": getattr(usage, "candidates_token_count", 0),
+                        "total": getattr(usage, "total_token_count", 0),
+                        "unit": "TOKENS",
+                    },
+                    latency=latency_ms,
+                )
 
         except Exception as e:
             logger.error(f"[LANGGRAPH] Error in threading analysis: {e}")
@@ -154,6 +244,19 @@ class NewsProcessorGraph:
     ) -> dict:
         """Process a single article through the LangGraph workflow"""
         logger.info(f"[LANGGRAPH] Starting article processing: {title[:50]}...")
+
+        # --- Langfuse: open a trace for this article ---
+        lf = _get_langfuse()
+        trace = None
+        if lf:
+            trace = lf.trace(
+                name="process_article",
+                input={"title": title, "url": url, "country": country},
+                metadata={"country": country},
+                tags=[country],
+            )
+
+        t_start = time.time()
         
         initial_state = NewsProcessingState(
             title=title,
@@ -171,13 +274,28 @@ class NewsProcessorGraph:
         # Run the graph
         final_state = await self.graph.ainvoke(initial_state)
         
-        logger.info(f"[LANGGRAPH] Article processing complete")
-        
-        return {
+        result = {
             "category": final_state.get("category"),
             "summary": final_state.get("summary"),
             "threading_decision": final_state.get("decision"),
         }
+
+        # --- Langfuse: close the trace with output ---
+        if trace:
+            try:
+                trace.update(
+                    output=result,
+                    metadata={
+                        "country": country,
+                        "total_latency_ms": int((time.time() - t_start) * 1000),
+                    },
+                )
+                lf.flush()
+            except Exception as e:
+                logger.warning(f"[LANGFUSE] Failed to update trace: {e}")
+
+        logger.info(f"[LANGGRAPH] Article processing complete")
+        return result
 
 
 _news_processor_graph = None

@@ -27,7 +27,13 @@ class NewsScrapingService:
             "errors": 0,
             "countries_processed": [],
             "categories_found": [],
-            "status": "idle"
+            "status": "idle",
+            "current_article": None,
+            "current_country": None,
+            "current_topic": None,
+            "log": [],         # live per-article log
+            "started_at": None,
+            "total_to_process": 0,
         }
         # Rate limiting settings
         self.request_delay = 1.0  # 1 second between Tavily API calls
@@ -55,6 +61,12 @@ class NewsScrapingService:
         self.stats["articles_processed"] = 0
         self.stats["articles_skipped"] = 0
         self.stats["errors"] = 0
+        self.stats["current_article"] = None
+        self.stats["current_country"] = None
+        self.stats["current_topic"] = None
+        self.stats["log"] = []
+        self.stats["started_at"] = datetime.now().isoformat()
+        self.stats["total_to_process"] = len(countries) * len(topics) * 5  # ~5 per topic
         
         logger.info(f"[SCRAPER] Starting scraping for {len(countries)} countries and {len(topics)} topics")
         logger.info(f"[SCRAPER] Rate limiting: {self.request_delay}s between API calls, {self.processing_delay}s between articles")
@@ -69,6 +81,7 @@ class NewsScrapingService:
                 
                 country_name = self._get_country_name(country)
                 self.stats["countries_processed"].append(country)
+                self.stats["current_country"] = country_name
                 
                 for topic_idx, topic in enumerate(topics):
                     # Check if stop was requested
@@ -77,6 +90,7 @@ class NewsScrapingService:
                         self.stats["status"] = "stopped"
                         break
                         
+                    self.stats["current_topic"] = topic
                     logger.info(f"[SCRAPER] Searching: {country_name} - {topic}")
                     
                     # Rate limit: Wait before making API call (except first request)
@@ -187,7 +201,22 @@ class NewsScrapingService:
             if existing:
                 logger.info(f"[SCRAPER] Article already exists: {url}")
                 self.stats["articles_skipped"] += 1
+                self.stats["log"].append({"status": "skipped", "title": title[:80], "reason": "duplicate URL"})
                 return
+
+            # Semantic duplicate check — skip if very similar title already stored
+            recent_titles = db.query(Article.title).filter(
+                Article.country == country
+            ).order_by(Article.published_at.desc()).limit(20).all()
+            for (rt,) in recent_titles:
+                if self._titles_are_similar(title, rt):
+                    logger.info(f"[SCRAPER] Skipping near-duplicate title: {title[:60]}")
+                    self.stats["articles_skipped"] += 1
+                    self.stats["log"].append({"status": "skipped", "title": title[:80], "reason": "near-duplicate title"})
+                    return
+
+            self.stats["current_article"] = title[:80]
+            self.stats["log"].append({"status": "processing", "title": title[:80]})
             
             # Get existing articles for threading
             existing_articles = db.query(Article).filter(
@@ -252,9 +281,10 @@ class NewsScrapingService:
                 parent_article = db.query(Article).filter(
                     Article.id == result["threading_decision"]
                 ).first()
-                if parent_article:
+                if parent_article and parent_article.thread_id:
+                    # Only thread if the parent already belongs to a real story thread
                     parent_id = parent_article.id
-                    thread_id = parent_article.thread_id or parent_article.id
+                    thread_id = parent_article.thread_id
             
             # Create new article
             from uuid import uuid4
@@ -281,13 +311,26 @@ class NewsScrapingService:
             if category not in self.stats["categories_found"]:
                 self.stats["categories_found"].append(category)
             
+            self.stats["log"].append({"status": "saved", "title": title[:80], "dna_code": dna_code, "category": category})
             logger.info(f"[SCRAPER] Article saved: {dna_code}")
             
         except Exception as e:
             logger.error(f"[SCRAPER] Error processing article: {e}")
             self.stats["errors"] += 1
+            self.stats["log"].append({"status": "error", "title": title[:80], "reason": str(e)[:120]})
             db.rollback()
     
+    def _titles_are_similar(self, title1: str, title2: str) -> bool:
+        """Simple word-overlap similarity check to detect near-duplicate articles"""
+        def tokenize(t):
+            return set(t.lower().split())
+        words1 = tokenize(title1)
+        words2 = tokenize(title2)
+        if not words1 or not words2:
+            return False
+        overlap = len(words1 & words2) / min(len(words1), len(words2))
+        return overlap >= 0.7  # 70% word overlap = near-duplicate
+
     def _get_country_name(self, code: str) -> str:
         """Convert country code to name"""
         country_map = {

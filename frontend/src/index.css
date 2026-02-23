@@ -19,3 +19,13 @@ code {
 * {
   box-sizing: border-box;
 }
+
+/* Smooth dark/light mode transition — no jarring flips */
+html {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Dark mode base colours */
+html.dark {
+  color-scheme: dark;
+}
