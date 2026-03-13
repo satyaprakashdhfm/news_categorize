@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     
     # API Keys
     GOOGLE_API_KEY: str
-    TVLY_API_KEY: str
+    TVLY_API_KEY: str = ""
     
     # Langfuse observability
     LANGFUSE_SECRET_KEY: str = ""

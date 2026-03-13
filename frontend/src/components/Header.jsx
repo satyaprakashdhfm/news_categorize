@@ -1,10 +1,19 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Globe, Settings, Home, Sun, Moon } from 'lucide-react';
+import { Globe, Settings, Home, Sun, Moon, Sparkles } from 'lucide-react';
 
 export default function Header({ isDark, toggleDark }) {
   const location = useLocation();
-  const isAdmin = location.pathname === '/admin';
+  const isAdmin = location.pathname.startsWith('/admin');
+  const isHome = location.pathname === '/';
+  const isCustom = location.pathname.startsWith('/custom');
+
+  const navButton = (isActive) =>
+    `flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+      isActive
+        ? 'bg-white text-primary-700 shadow font-semibold'
+        : 'bg-white/10 hover:bg-white/20 text-white'
+    }`;
 
   return (
     <header className="bg-gradient-to-r from-primary-600 to-primary-800 dark:from-gray-900 dark:to-gray-800 text-white shadow-lg">
@@ -32,20 +41,27 @@ export default function Header({ isDark, toggleDark }) {
             </button>
 
             <Link
-              to={isAdmin ? "/" : "/admin"}
-              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-all"
+              to="/"
+              className={navButton(isHome)}
             >
-              {isAdmin ? (
-                <>
-                  <Home className="h-5 w-5" />
-                  <span>Home</span>
-                </>
-              ) : (
-                <>
-                  <Settings className="h-5 w-5" />
-                  <span>Admin</span>
-                </>
-              )}
+              <Home className="h-5 w-5" />
+              <span>Home</span>
+            </Link>
+
+            <Link
+              to="/custom"
+              className={navButton(isCustom)}
+            >
+              <Sparkles className="h-5 w-5" />
+              <span>Custom</span>
+            </Link>
+
+            <Link
+              to="/admin"
+              className={navButton(isAdmin)}
+            >
+              <Settings className="h-5 w-5" />
+              <span>Admin</span>
             </Link>
           </div>
         </div>

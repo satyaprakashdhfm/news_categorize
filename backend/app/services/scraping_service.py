@@ -1,6 +1,5 @@
-from tavily import TavilyClient
-from app.core.config import settings
 from app.services.langgraph_processor import get_news_processor_graph
+from app.services.article_extractor_service import article_extractor_service
 from sqlalchemy.orm import Session
 from app.models import Article, StoryThread, CategoryEnum, CountryEnum
 from datetime import datetime
@@ -11,11 +10,9 @@ import time
 
 logger = logging.getLogger(__name__)
 
-tavily_client = TavilyClient(api_key=settings.TVLY_API_KEY)
-
 
 class NewsScrapingService:
-    """Service for scraping news using Tavily API and processing with LangGraph"""
+    """Service for scraping news using newspaper4k and processing with LangGraph"""
     
     def __init__(self):
         self.is_running = False
@@ -36,9 +33,9 @@ class NewsScrapingService:
             "total_to_process": 0,
         }
         # Rate limiting settings
-        self.request_delay = 1.0  # 1 second between Tavily API calls
+        self.request_delay = 1.0  # 1 second between discovery calls
         self.processing_delay = 0.5  # 0.5 seconds between article processing
-        self.max_retries = 3  # Maximum retry attempts for failed requests
+        self.max_retries = 3  # Maximum retry attempts for failed discovery calls
         self.retry_delay = 2.0  # Delay between retries (exponential backoff)
     
     async def scrape_country_topic(
@@ -98,9 +95,8 @@ class NewsScrapingService:
                         logger.debug(f"[SCRAPER] Rate limiting: waiting {self.request_delay}s before next API call")
                         await asyncio.sleep(self.request_delay)
                     
-                    # Use Tavily to search for news with retry logic
-                    query = f"{country_name} {topic} news {date}"
-                    search_results = await self._search_with_retry(query)
+                    # Discover candidate article URLs via newspaper4k Google News source.
+                    search_results = await self._search_with_retry(country, topic, date)
                     
                     if search_results:
                         self.stats["total_articles_found"] += len(search_results.get("results", []))
@@ -133,27 +129,25 @@ class NewsScrapingService:
         
         return self.stats
     
-    async def _search_with_retry(self, query: str) -> dict:
-        """Search with exponential backoff retry logic"""
+    async def _search_with_retry(self, country: str, topic: str, date: str) -> dict:
+        """Discover article URLs with exponential backoff retry logic"""
         for attempt in range(self.max_retries):
             try:
-                logger.debug(f"[SCRAPER] Tavily search attempt {attempt + 1}/{self.max_retries}: {query}")
-                
-                # Make the search call (note: tavily_client.search is sync, so we run it in executor)
-                search_results = await asyncio.to_thread(
-                    tavily_client.search,
-                    query=query,
-                    search_depth="advanced",
-                    max_results=5,
-                    include_domains=[],
-                    exclude_domains=[]
+                logger.debug(
+                    f"[SCRAPER] Discovery attempt {attempt + 1}/{self.max_retries}: country={country}, topic={topic}, date={date}"
                 )
-                
-                logger.info(f"[SCRAPER] Tavily returned {len(search_results.get('results', []))} results")
-                return search_results
+
+                results = await article_extractor_service.search(
+                    country_code=country,
+                    topic=topic,
+                    date=date,
+                    max_results=5,
+                )
+                logger.info(f"[SCRAPER] newspaper4k returned {len(results)} candidate URLs")
+                return {"results": results}
                 
             except Exception as e:
-                logger.warning(f"[SCRAPER] Search attempt {attempt + 1} failed: {e}")
+                logger.warning(f"[SCRAPER] Discovery attempt {attempt + 1} failed: {e}")
                 
                 if attempt < self.max_retries - 1:
                     # Exponential backoff: 2s, 4s, 8s
@@ -161,7 +155,9 @@ class NewsScrapingService:
                     logger.info(f"[SCRAPER] Retrying in {backoff_time}s...")
                     await asyncio.sleep(backoff_time)
                 else:
-                    logger.error(f"[SCRAPER] All {self.max_retries} attempts failed for query: {query}")
+                    logger.error(
+                        f"[SCRAPER] All {self.max_retries} discovery attempts failed for country={country}, topic={topic}, date={date}"
+                    )
                     self.stats["errors"] += 1
                     return None
         
@@ -178,8 +174,15 @@ class NewsScrapingService:
     ):
         """Process a single article using LangGraph with safety checks"""
         try:
+            # Enrich discovered URLs with full-article extraction from newspaper4k.
+            extracted = await article_extractor_service.extract(url=url, fallback_title=title)
+            extracted_title = extracted.get("title") or title
+            extracted_content = extracted.get("content") or content
+            extracted_image_url = extracted.get("image_url")
+            extracted_published_at = extracted.get("published_at")
+
             # Safety check: Validate required fields
-            if not title or not url:
+            if not extracted_title or not url:
                 logger.warning(f"[SCRAPER] Skipping article with missing title or URL")
                 self.stats["articles_skipped"] += 1
                 return
@@ -191,8 +194,10 @@ class NewsScrapingService:
                 return
             
             # Safety check: Title length validation
-            if len(title) < 10 or len(title) > 500:
-                logger.warning(f"[SCRAPER] Skipping article with unusual title length ({len(title)} chars): {title[:50]}")
+            if len(extracted_title) < 10 or len(extracted_title) > 500:
+                logger.warning(
+                    f"[SCRAPER] Skipping article with unusual title length ({len(extracted_title)} chars): {extracted_title[:50]}"
+                )
                 self.stats["articles_skipped"] += 1
                 return
             
@@ -209,14 +214,18 @@ class NewsScrapingService:
                 Article.country == country
             ).order_by(Article.published_at.desc()).limit(20).all()
             for (rt,) in recent_titles:
-                if self._titles_are_similar(title, rt):
-                    logger.info(f"[SCRAPER] Skipping near-duplicate title: {title[:60]}")
+                if self._titles_are_similar(extracted_title, rt):
+                    logger.info(f"[SCRAPER] Skipping near-duplicate title: {extracted_title[:60]}")
                     self.stats["articles_skipped"] += 1
-                    self.stats["log"].append({"status": "skipped", "title": title[:80], "reason": "near-duplicate title"})
+                    self.stats["log"].append({"status": "skipped", "title": extracted_title[:80], "reason": "near-duplicate title"})
                     return
 
-            self.stats["current_article"] = title[:80]
-            self.stats["log"].append({"status": "processing", "title": title[:80]})
+            self.stats["current_article"] = extracted_title[:80]
+            self.stats["log"].append({
+                "status": "processing",
+                "title": extracted_title[:80],
+                "content_chars": len(extracted_content or ""),
+            })
             
             # Get existing articles for threading
             existing_articles = db.query(Article).filter(
@@ -238,8 +247,8 @@ class NewsScrapingService:
             # Safety: Wrap AI processing in try-catch
             try:
                 result = await processor.process_article(
-                    title=title,
-                    content=content or title,  # Fallback to title if no content
+                    title=extracted_title,
+                    content=extracted_content or extracted_title,
                     url=url,
                     country=country,
                     existing_articles=existing_articles_data
@@ -249,7 +258,7 @@ class NewsScrapingService:
                 # Use defaults if AI fails
                 result = {
                     "category": "ECO",  # Default category
-                    "summary": title,   # Use title as summary
+                    "summary": extracted_title,
                     "threading_decision": "NEW_THREAD"
                 }
                 self.stats["errors"] += 1
@@ -291,11 +300,13 @@ class NewsScrapingService:
             new_article = Article(
                 id=str(uuid4()),
                 dna_code=dna_code,
-                title=title[:500],  # Safety: Truncate if too long
-                content=content[:50000] if content else None,  # Safety: Limit content size
-                summary=result["summary"][:1000] if result.get("summary") else title[:500],
+                title=extracted_title[:500],
+                content=extracted_content[:50000] if extracted_content else None,
+                summary=result["summary"][:8000] if result.get("summary") else extracted_title[:500],
+                image_url=extracted_image_url[:1000] if extracted_image_url else None,
                 source_url=url[:1000],  # Safety: Truncate URL
-                published_at=datetime.fromisoformat(published_at.replace('Z', '+00:00')) if 'T' in published_at else datetime.now(),
+                published_at=extracted_published_at
+                or (datetime.fromisoformat(published_at.replace('Z', '+00:00')) if 'T' in published_at else datetime.now()),
                 country=CountryEnum[country],
                 category=CategoryEnum[category],
                 year=year,
@@ -311,13 +322,13 @@ class NewsScrapingService:
             if category not in self.stats["categories_found"]:
                 self.stats["categories_found"].append(category)
             
-            self.stats["log"].append({"status": "saved", "title": title[:80], "dna_code": dna_code, "category": category})
+            self.stats["log"].append({"status": "saved", "title": extracted_title[:80], "dna_code": dna_code, "category": category})
             logger.info(f"[SCRAPER] Article saved: {dna_code}")
             
         except Exception as e:
             logger.error(f"[SCRAPER] Error processing article: {e}")
             self.stats["errors"] += 1
-            self.stats["log"].append({"status": "error", "title": title[:80], "reason": str(e)[:120]})
+            self.stats["log"].append({"status": "error", "title": (title or "")[:80], "reason": str(e)[:120]})
             db.rollback()
     
     def _titles_are_similar(self, title1: str, title2: str) -> bool:

@@ -7,7 +7,9 @@ load_dotenv(dotenv_path=env_path)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import articles, scraping
+from app.api import articles, scraping, custom_agents, custom_youtube, custom_reddit
+from app.core.database import Base, engine
+import app.models  # noqa: F401 - ensure models are registered before create_all
 from app.core.config import settings
 import logging
 
@@ -42,6 +44,15 @@ app.add_middleware(
 # Include routers
 app.include_router(articles.router)
 app.include_router(scraping.router)
+app.include_router(custom_agents.router)
+app.include_router(custom_youtube.router)
+app.include_router(custom_reddit.router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    # Auto-create missing tables (including custom_agents) for this project setup.
+    Base.metadata.create_all(bind=engine)
 
 
 @app.get("/")

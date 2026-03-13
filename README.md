@@ -7,7 +7,7 @@ AI-powered global news intelligence platform with advanced categorization and st
 - **Backend**: FastAPI + SQLAlchemy + LangGraph + PostgreSQL
 - **Frontend**: React + Vite + TailwindCSS
 - **AI**: Google Gemini (via LangGraph)
-- **News API**: Tavily
+- **News Crawling**: newspaper4k + Google News (gnews)
 
 ## Quick Start
 
@@ -34,7 +34,6 @@ pip install -r requirements.txt
 
 # Update .env with your API keys
 # GOOGLE_API_KEY=your_key
-# TVLY_API_KEY=your_key
 
 uvicorn main:app --reload
 ```
@@ -72,7 +71,12 @@ Frontend: http://localhost:3000
 ```env
 DATABASE_URL=postgresql://satya3479:satya3479@localhost:5432/living_world_stories
 GOOGLE_API_KEY=your_gemini_api_key
-TVLY_API_KEY=your_tavily_api_key
+LANGFUSE_SECRET_KEY=
+LANGFUSE_PUBLIC_KEY=
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+API_HOST=0.0.0.0
+API_PORT=8000
+SHOW_DB_LOGS=false
 ```
 
 ## Project Structure

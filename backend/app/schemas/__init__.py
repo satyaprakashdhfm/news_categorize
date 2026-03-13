@@ -11,6 +11,29 @@ from app.schemas.article import (
     CountryEnum,
     CategoryEnum,
 )
+from app.schemas.custom_agent import (
+    CustomAgentCreate,
+    CustomAgentResponse,
+    CustomAgentListResponse,
+    CustomSearchRequest,
+    CustomSearchArticle,
+    CustomSearchResponse,
+    CustomFeedResponse,
+)
+from app.schemas.custom_youtube import (
+    YouTubeScrapeRequest,
+    YouTubeVideoItem,
+    YouTubeChannelResult,
+    YouTubeScrapeResponse,
+    YouTubeHistoryResponse,
+)
+from app.schemas.custom_reddit import (
+    RedditScrapeRequest,
+    RedditPostItem,
+    RedditCommunityResult,
+    RedditScrapeResponse,
+    RedditHistoryResponse,
+)
 
 __all__ = [
     "ArticleBase",
@@ -24,4 +47,21 @@ __all__ = [
     "CategoryCount",
     "CountryEnum",
     "CategoryEnum",
+    "CustomAgentCreate",
+    "CustomAgentResponse",
+    "CustomAgentListResponse",
+    "CustomSearchRequest",
+    "CustomSearchArticle",
+    "CustomSearchResponse",
+    "CustomFeedResponse",
+    "YouTubeScrapeRequest",
+    "YouTubeVideoItem",
+    "YouTubeChannelResult",
+    "YouTubeScrapeResponse",
+    "YouTubeHistoryResponse",
+    "RedditScrapeRequest",
+    "RedditPostItem",
+    "RedditCommunityResult",
+    "RedditScrapeResponse",
+    "RedditHistoryResponse",
 ]

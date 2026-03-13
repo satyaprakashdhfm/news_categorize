@@ -13,6 +13,7 @@ class CountryEnum(str, Enum):
     UK = "UK"
     GERMANY = "GERMANY"
     FRANCE = "FRANCE"
+    ITALY = "ITALY"
     BRAZIL = "BRAZIL"
     AUSTRALIA = "AUSTRALIA"
 
@@ -20,6 +21,7 @@ class CountryEnum(str, Enum):
 class CategoryEnum(str, Enum):
     POL = "POL"
     ECO = "ECO"
+    BUS = "BUS"
     SOC = "SOC"
     TEC = "TEC"
     ENV = "ENV"

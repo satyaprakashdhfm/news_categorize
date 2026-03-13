@@ -116,9 +116,13 @@ class NewsProcessorGraph:
         logger.info(f"[LANGGRAPH] Generating summary for: {state['title'][:50]}...")
 
         prompt = (
-            "You are a news summarization expert. Create a concise 2-3 sentence summary of the article. "
-            "Be factual and objective.\n\n"
-            f"Title: {state['title']}\n\nContent: {state['content'][:3000]}"
+            "You are a senior geopolitical and business news analyst. "
+            "Write a comprehensive but readable summary that captures the full story. "
+            "Include all major facts from the article: what happened, who is involved, timeline, "
+            "key numbers/data points, causes/context, and likely implications. "
+            "Keep it factual and neutral. Avoid repetition and speculation. "
+            "Target 6-10 sentences and preserve important names and figures exactly.\n\n"
+            f"Title: {state['title']}\n\nContent: {state['content'][:12000]}"
         )
 
         try:
