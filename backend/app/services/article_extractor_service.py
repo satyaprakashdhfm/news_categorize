@@ -2,41 +2,32 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
 class ArticleExtractorService:
-    """Extract full article text using local newspaper4k package."""
+    """Discover and extract articles using newspaper4k package."""
 
     def __init__(self) -> None:
-        self._is_newspaper_available = False
+        self._is_available = False
         self._init_newspaper_import()
 
     def _init_newspaper_import(self) -> None:
-        """Ensure local newspaper package is importable at runtime."""
-        project_root = Path(__file__).resolve().parents[2]
-        newspaper_root = project_root / "news scrapping"
-
-        if str(newspaper_root) not in sys.path:
-            sys.path.insert(0, str(newspaper_root))
-
         try:
             import newspaper  # noqa: F401
 
-            self._is_newspaper_available = True
-            logger.info("[EXTRACTOR] newspaper4k integration is active")
+            self._is_available = True
+            logger.info("[EXTRACTOR] newspaper4k package integration is active")
         except Exception as exc:
-            self._is_newspaper_available = False
+            self._is_available = False
             logger.warning(f"[EXTRACTOR] newspaper4k unavailable: {exc}")
 
     async def search(self, country_code: str, topic: str, date: str, max_results: int = 5) -> list[dict]:
         """Discover article URLs using newspaper4k Google News source."""
-        if not self._is_newspaper_available:
+        if not self._is_available:
             return []
 
         return await asyncio.to_thread(self._search_sync, country_code, topic, date, max_results)
@@ -73,12 +64,12 @@ class ArticleExtractorService:
 
             return items
         except Exception as exc:
-            logger.warning(f"[EXTRACTOR] Discovery failed for {country_code}/{topic}: {exc}")
+            logger.warning(f"[EXTRACTOR] newspaper discovery failed for {country_code}/{topic}: {exc}")
             return []
 
     async def extract(self, url: str, fallback_title: str = "") -> dict:
         """Extract title/content/image/date from URL with graceful fallback."""
-        if not self._is_newspaper_available:
+        if not self._is_available:
             return {
                 "title": fallback_title,
                 "content": None,
@@ -90,9 +81,11 @@ class ArticleExtractorService:
 
     def _extract_sync(self, url: str, fallback_title: str) -> dict:
         try:
-            import newspaper
+            from newspaper import Article
 
-            article = newspaper.article(url, language="en")
+            article = Article(url, language="en")
+            article.download()
+            article.parse()
 
             title = (article.title or "").strip() or fallback_title
             content = (article.text or "").strip() or None

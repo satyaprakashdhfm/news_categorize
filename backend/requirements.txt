@@ -16,13 +16,14 @@ passlib[bcrypt]==1.7.4
 beautifulsoup4==4.12.2
 brotli==1.2.0
 feedparser==6.0.10
-gnews==0.4.3
+newspaper4k==0.9.5
 lxml[html_clean]==6.0.2
 nltk==3.6.7
 pillow==10.4.0
 python-dateutil==2.8.2
 pyyaml==6.0.1
-requests==2.27.1
+requests==2.31.0
 tldextract==3.1.2
-typing-extensions==4.10.0
+typing-extensions==4.12.2
 w3lib==2.3.1
+yt-dlp==2026.3.17
