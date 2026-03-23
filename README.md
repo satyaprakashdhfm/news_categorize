@@ -1,4 +1,13 @@
+Recommended approach:
+
+Keep package-based by default (what you have now).
+Pin exact versions (already done).
+Only fork/local-vendor if you hit a blocker that cannot be solved with config or version pinning.
+
 # Curio
+
+
+
 
 AI-powered global news intelligence platform with advanced categorization and story threading.
 
