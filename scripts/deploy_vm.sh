@@ -14,7 +14,7 @@ cd "${APP_DIR}"
 echo "[deploy] Syncing git branch..."
 git fetch origin "${BRANCH}"
 git checkout "${BRANCH}"
-git pull --ff-only origin "${BRANCH}"
+git reset --hard "origin/${BRANCH}"
 
 echo "[deploy] Installing backend dependencies..."
 cd backend
