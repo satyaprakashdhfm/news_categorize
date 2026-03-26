@@ -111,6 +111,40 @@ start.sh          # Start both servers
 stop.sh           # Stop servers
 ```
 
+## CI/CD (f2p branch to single VM)
+
+This repository includes:
+
+- `.github/workflows/deploy-f2p.yml` for GitHub Actions deployment
+- `scripts/deploy_vm.sh` reusable VM deploy script
+
+Workflow trigger:
+
+- Push to `f2p`
+- Manual trigger from Actions tab (`workflow_dispatch`)
+
+Required GitHub repository secrets:
+
+- `VM_HOST` (example: `3.88.249.110`)
+- `VM_USER` (example: `ubuntu`)
+- `VM_SSH_KEY` (private key contents for the VM)
+- `VM_PORT` (optional, defaults to `22`)
+
+The deployment script performs:
+
+1. `git fetch/checkout/pull` on `f2p`
+2. Backend dependency install in `backend/.venv`
+3. Frontend production build in `frontend/dist`
+4. `systemctl restart curio-backend`
+5. `systemctl reload nginx`
+6. Backend health check at `http://127.0.0.1:8000/health`
+
+Prerequisite on VM:
+
+- `curio-backend` systemd service must already exist
+- `nginx` must already be installed and configured
+- `ubuntu` user must be allowed to run `sudo systemctl` and `sudo nginx` commands
+
 ## License
 
 MIT
