@@ -17,6 +17,7 @@ beautifulsoup4==4.12.2
 brotli==1.2.0
 feedparser==6.0.10
 newspaper4k==0.9.5
+gnews==0.4.2
 lxml[html_clean]==5.2.2
 nltk==3.6.7
 pillow==10.4.0
