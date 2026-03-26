@@ -139,6 +139,36 @@ The deployment script performs:
 5. `systemctl reload nginx`
 6. Backend health check at `http://127.0.0.1:8000/health`
 
+## First-Time VM Bootstrap
+
+Use this only on a brand new VM:
+
+- `scripts/bootstrap_vm_first_time.sh`
+
+What it does:
+
+1. Installs system dependencies (nginx, postgres, python, node)
+2. Clones/updates repo on `f2p`
+3. Creates PostgreSQL role/database
+4. Applies `db/bootstrap.sql`
+5. Installs backend dependencies
+6. Creates backend systemd service (`curio-backend`)
+7. Builds frontend and publishes static files
+8. Configures Nginx and verifies health checks
+
+Example run on VM:
+
+```bash
+cd /home/ubuntu/news_categorize
+chmod +x scripts/bootstrap_vm_first_time.sh
+APP_DIR=/home/ubuntu/news_categorize BRANCH=f2p bash scripts/bootstrap_vm_first_time.sh
+```
+
+After first-time bootstrap, use repeat deploy flow:
+
+- `scripts/deploy_vm.sh` (manual), or
+- GitHub Actions workflow `.github/workflows/deploy-f2p.yml`
+
 Prerequisite on VM:
 
 - `curio-backend` systemd service must already exist
