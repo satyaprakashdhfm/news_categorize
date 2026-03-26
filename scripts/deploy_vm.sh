@@ -43,7 +43,7 @@ sudo systemctl reload nginx
 
 echo "[deploy] Health check with retries..."
 for i in {1..20}; do
-  if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
+  if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
     echo "[deploy] Backend health check passed."
     break
   fi
