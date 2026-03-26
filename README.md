@@ -125,10 +125,20 @@ Workflow trigger:
 
 Required GitHub repository secrets:
 
-- `VM_HOST` (example: `3.88.249.110`)
-- `VM_USER` (example: `ubuntu`)
-- `VM_SSH_KEY` (private key contents for the VM)
-- `VM_PORT` (optional, defaults to `22`)
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_REGION` (example: `us-east-1`)
+- `EC2_INSTANCE_ID` (example: `i-0123456789abcdef0`)
+
+SSM prerequisites:
+
+- EC2 instance IAM role must include `AmazonSSMManagedInstanceCore`
+- Instance must appear as a managed node in AWS Systems Manager
+- AWS IAM user used by GitHub secrets needs permission for:
+  - `ssm:SendCommand`
+  - `ssm:GetCommandInvocation`
+  - `ssm:ListCommandInvocations`
+  - `ec2:DescribeInstances`
 
 The deployment script performs:
 
@@ -138,6 +148,8 @@ The deployment script performs:
 4. `systemctl restart curio-backend`
 5. `systemctl reload nginx`
 6. Backend health check at `http://127.0.0.1:8000/health`
+
+This workflow is SSM-based (no SSH key required for CI/CD).
 
 ## First-Time VM Bootstrap
 
