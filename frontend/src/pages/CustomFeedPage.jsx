@@ -70,8 +70,7 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
         image_url: article.image_url,
         source_url: article.url,
         published_at: article.published_at || new Date().toISOString(),
-        country: data?.country || 'USA',
-        category: 'TEC',
+        category: null,
       }));
 
       setArticles((prev) => {
@@ -87,7 +86,6 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
       setSearchMeta({
         totalFound: data?.total_found || ranked.length,
         limit: data?.limit || 5,
-        country: data?.country || 'USA',
         date: data?.date || new Date().toISOString().slice(0, 10),
       });
       addLog(`DONE fetched ${ranked.length} new articles`);
@@ -126,8 +124,7 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
           image_url: article.image_url,
           source_url: article.url,
           published_at: article.published_at || new Date().toISOString(),
-          country: data?.country || 'USA',
-          category: 'TEC',
+          category: null,
         }));
 
         if (saved.length) {
@@ -135,7 +132,6 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
           setSearchMeta({
             totalFound: data?.total_found || saved.length,
             limit: data?.limit || saved.length,
-            country: data?.country || 'USA',
             date: data?.date || new Date().toISOString().slice(0, 10),
           });
           addLog(`LOADED history feed (${saved.length})`);
@@ -229,7 +225,7 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
 
             {searchMeta && (
               <p className="text-sm text-secondary-600 dark:text-gray-300 mb-3">
-                country={searchMeta.country} date={searchMeta.date} limit={searchMeta.limit} total_found={searchMeta.totalFound}
+                date={searchMeta.date} limit={searchMeta.limit} total_found={searchMeta.totalFound}
               </p>
             )}
 

@@ -15,7 +15,7 @@ from app.schemas import (
     CustomSearchRequest,
     CustomSearchResponse,
 )
-from app.services.custom_agent_service import build_title_from_prompt, search_prompt_articles
+from app.services.custom_agent_service import build_title_from_prompt, detect_countries, search_prompt_articles
 
 
 router = APIRouter(prefix="/api/custom-agents", tags=["custom-agents"])
@@ -81,7 +81,6 @@ async def get_latest_custom_feed(agent_id: str, db: Session = Depends(get_db)):
             agent=CustomAgentResponse.model_validate(agent),
             total_found=0,
             limit=5,
-            country="USA",
             date=datetime.now().strftime("%Y-%m-%d"),
             articles=[],
         )
@@ -103,7 +102,6 @@ async def get_latest_custom_feed(agent_id: str, db: Session = Depends(get_db)):
         agent=CustomAgentResponse.model_validate(agent),
         total_found=len(articles),
         limit=len(articles),
-        country="USA",
         date=datetime.now().strftime("%Y-%m-%d"),
         articles=articles,
     )
@@ -119,10 +117,11 @@ async def search_custom_agent_feed(
     if not agent:
         raise HTTPException(status_code=404, detail="Custom agent not found")
 
-    # Default limit is 5 for concise, high-relevance custom feed results.
+    resolved_countries = detect_countries(agent.prompt)
+
     articles = await search_prompt_articles(
         prompt=agent.prompt,
-        country=request.country,
+        countries=resolved_countries,
         date=request.date,
         limit=request.limit,
     )
@@ -150,7 +149,6 @@ async def search_custom_agent_feed(
         agent=CustomAgentResponse.model_validate(agent),
         total_found=len(articles),
         limit=request.limit,
-        country=request.country,
         date=query_date,
         articles=articles,
     )

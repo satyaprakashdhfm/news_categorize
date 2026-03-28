@@ -26,7 +26,6 @@ class CustomAgentListResponse(BaseModel):
 
 
 class CustomSearchRequest(BaseModel):
-    country: str = Field(default="USA", min_length=2, max_length=20)
     date: Optional[str] = None
     limit: int = Field(default=5, ge=1, le=50)
 
@@ -45,7 +44,6 @@ class CustomSearchResponse(BaseModel):
     agent: CustomAgentResponse
     total_found: int
     limit: int
-    country: str
     date: str
     articles: List[CustomSearchArticle]
 
@@ -54,6 +52,5 @@ class CustomFeedResponse(BaseModel):
     agent: CustomAgentResponse
     total_found: int
     limit: int
-    country: str
     date: str
     articles: List[CustomSearchArticle]

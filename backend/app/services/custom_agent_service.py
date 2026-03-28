@@ -64,6 +64,16 @@ STOP_WORDS = {
 
 SPECIAL_SHORT_KEYWORDS = {"ai", "ml", "llm"}
 HIGH_INTENT_KEYWORDS = {"ai", "github", "repo", "repos", "open", "source", "opensource"}
+COUNTRY_KEYWORDS = {
+    "USA": {"us", "usa", "united states", "america", "american"},
+    "CHINA": {"china", "chinese", "prc"},
+    "INDIA": {"india", "indian"},
+    "GERMANY": {"germany", "german"},
+    "JAPAN": {"japan", "japanese"},
+    "UK": {"uk", "britain", "british", "united kingdom", "england"},
+    "FRANCE": {"france", "french"},
+    "ITALY": {"italy", "italian"},
+}
 
 
 def build_title_from_prompt(prompt: str) -> str:
@@ -81,13 +91,13 @@ def extract_keywords(prompt: str) -> list[str]:
     words = [
         w
         for w in cleaned.split()
-        if ((len(w) >= 3) or (w in SPECIAL_SHORT_KEYWORDS)) and w not in STOP_WORDS
+        if ((len(w) >= 3) or (w in SPECIAL_SHORT_KEYWORDS)) and len(w) <= 24 and w not in STOP_WORDS
     ]
     return words[:25]
 
 
 def _extract_phrases(prompt: str) -> list[str]:
-    text = " ".join((prompt or "").lower().split())
+    text = " ".join((prompt or "").lower().replace("-", " ").split())
     phrases: list[str] = []
     if "open source" in text:
         phrases.append("open source")
@@ -95,7 +105,22 @@ def _extract_phrases(prompt: str) -> list[str]:
         phrases.append("github repos")
     if "github repo" in text:
         phrases.append("github repo")
+    if "ai tools" in text:
+        phrases.append("ai tools")
+    if "startup funding" in text:
+        phrases.append("startup funding")
+    if "ai startup" in text:
+        phrases.append("ai startup")
     return phrases
+
+
+def detect_countries(prompt: str) -> list[str]:
+    text = " ".join((prompt or "").lower().replace("-", " ").split())
+    detected: list[str] = []
+    for country, aliases in COUNTRY_KEYWORDS.items():
+        if any(alias in text for alias in aliases):
+            detected.append(country)
+    return detected
 
 
 def score_text(title: str, summary: str, content: str, keywords: list[str], phrases: list[str]) -> int:
@@ -128,12 +153,14 @@ def _to_iso(value: Any) -> str | None:
     return str(value)
 
 
-def _build_query_topics(prompt: str, keywords: list[str]) -> list[str]:
+def _build_query_topics(prompt: str, keywords: list[str], phrases: list[str]) -> list[str]:
     topics: list[str] = []
 
     base_prompt = (prompt or "").strip()
-    if base_prompt:
+    if base_prompt and len(base_prompt.split()) <= 12:
         topics.append(base_prompt)
+
+    topics.extend(phrases[:3])
 
     if keywords:
         topics.append(" ".join(keywords[:6]))
@@ -157,7 +184,8 @@ def _build_query_topics(prompt: str, keywords: list[str]) -> list[str]:
 
 async def search_prompt_articles(
     prompt: str,
-    country: str = "USA",
+    country: str | None = None,
+    countries: list[str] | None = None,
     date: str | None = None,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
@@ -166,16 +194,27 @@ async def search_prompt_articles(
     query_date = date or datetime.now().strftime("%Y-%m-%d")
     keywords = extract_keywords(prompt)
     phrases = _extract_phrases(prompt)
-    topics = _build_query_topics(prompt, keywords)
+    topics = _build_query_topics(prompt, keywords, phrases)
+    if not topics:
+        topics = [" ".join((prompt or "").split()[:6]) or "news"]
+
+    resolved_countries = [c.upper() for c in (countries or []) if c]
+    if not resolved_countries:
+        resolved_countries = detect_countries(prompt)
+    if not resolved_countries and country:
+        resolved_countries = [country.upper()]
+    if not resolved_countries:
+        resolved_countries = [""]
 
     # Pull candidates from multiple prompt variants for broader coverage.
     searches = [
         article_extractor_service.search(
-            country_code=(country or "USA").upper(),
+            country_code=country_code,
             topic=topic,
             date=query_date,
             max_results=safe_limit,
         )
+        for country_code in resolved_countries
         for topic in topics
     ]
     batches = await asyncio.gather(*searches)
