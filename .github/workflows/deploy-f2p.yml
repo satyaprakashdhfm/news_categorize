@@ -1,9 +1,9 @@
-name: Deploy f2p to VM (SSM)
+name: Deploy main to VM (SSM)
 
 on:
   push:
     branches:
-      - f2p
+      - main
   workflow_dispatch:
 
 jobs:
@@ -23,14 +23,14 @@ jobs:
         env:
           INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
           APP_DIR: /home/ubuntu/news_categorize
-          BRANCH: f2p
+          BRANCH: main
         run: |
           DEPLOY_COMMAND="sudo -u ubuntu -H bash -lc 'cd ${APP_DIR} && git fetch origin ${BRANCH} && git checkout ${BRANCH} && git reset --hard origin/${BRANCH} && APP_DIR=${APP_DIR} BRANCH=${BRANCH} bash scripts/deploy_vm.sh'"
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy f2p via GitHub Actions" \
+            --comment "Deploy main via GitHub Actions" \
             --parameters "{\"commands\":[\"$DEPLOY_COMMAND\"]}" \
             --query 'Command.CommandId' \
             --output text)
