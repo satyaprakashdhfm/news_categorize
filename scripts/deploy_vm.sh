@@ -12,8 +12,12 @@ echo "[deploy] Branch: ${BRANCH}"
 cd "${APP_DIR}"
 
 echo "[deploy] Syncing git branch..."
-git fetch origin "${BRANCH}"
-git checkout "${BRANCH}"
+git fetch origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
+if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
+  git checkout "${BRANCH}"
+else
+  git checkout -B "${BRANCH}" "origin/${BRANCH}"
+fi
 git reset --hard "origin/${BRANCH}"
 
 echo "[deploy] Installing backend dependencies..."
