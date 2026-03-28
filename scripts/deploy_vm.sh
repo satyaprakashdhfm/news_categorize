@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/home/ubuntu/news_categorize}"
-BRANCH="${BRANCH:-f2p}"
+BRANCH="${BRANCH:-main}"
 SERVICE_NAME="${SERVICE_NAME:-curio-backend}"
 WEB_ROOT="${WEB_ROOT:-/var/www/curio}"
 
