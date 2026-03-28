@@ -25,7 +25,7 @@ jobs:
           APP_DIR: /home/ubuntu/news_categorize
           BRANCH: main
         run: |
-          DEPLOY_COMMAND="sudo -u ubuntu -H bash -lc 'APP_DIR=${APP_DIR} BRANCH=${BRANCH} bash ${APP_DIR}/scripts/deploy_vm.sh'"
+          DEPLOY_COMMAND="sudo -u ubuntu -H bash -lc 'cd ${APP_DIR} && git fetch origin +refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH} && git checkout -B ${BRANCH} origin/${BRANCH} && git reset --hard origin/${BRANCH} && APP_DIR=${APP_DIR} BRANCH=${BRANCH} bash ${APP_DIR}/scripts/deploy_vm.sh'"
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
