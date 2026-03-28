@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
-from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
@@ -19,17 +17,11 @@ class YouTubeScrapingService:
         self._init_summary_client()
 
     def _init_yt_dlp_import(self) -> None:
-        backend_root = Path(__file__).resolve().parents[2]
-        yt_dlp_root = backend_root / "youtubescrapping" / "yt-dlp"
-
-        if str(yt_dlp_root) not in sys.path:
-            sys.path.insert(0, str(yt_dlp_root))
-
         try:
             import yt_dlp  # noqa: F401
 
             self._is_yt_dlp_available = True
-            logger.info("[YOUTUBE] yt-dlp integration is active")
+            logger.info("[YOUTUBE] yt-dlp package integration is active")
         except Exception as exc:
             self._is_yt_dlp_available = False
             logger.warning(f"[YOUTUBE] yt-dlp unavailable: {exc}")

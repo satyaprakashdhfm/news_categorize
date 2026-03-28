@@ -17,6 +17,8 @@ const STATUS_COLOR = {
   processing: 'text-blue-400',
 };
 
+const API_BASE_URL = '/api';
+
 export default function AdminPage({ isDark, toggleDark }) {
   const [selectedCountries, setSelectedCountries] = useState(['USA']);
   const [selectedTopics, setSelectedTopics]       = useState(['policy']);
@@ -51,7 +53,7 @@ export default function AdminPage({ isDark, toggleDark }) {
     clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       try {
-        const res  = await fetch('http://localhost:8000/api/admin/scraping/progress');
+        const res  = await fetch(`${API_BASE_URL}/admin/scraping/progress`);
         const data = await res.json();
         setStats(data.stats);
         if (data.status !== 'running') {
@@ -74,7 +76,7 @@ export default function AdminPage({ isDark, toggleDark }) {
     setStats(null);
     setIsRunning(true);
     try {
-      const res = await fetch('http://localhost:8000/api/admin/scraping/start', {
+      const res = await fetch(`${API_BASE_URL}/admin/scraping/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -93,7 +95,7 @@ export default function AdminPage({ isDark, toggleDark }) {
 
   const handleStop = async () => {
     try {
-      await fetch('http://localhost:8000/api/admin/scraping/stop', { method: 'POST' });
+      await fetch(`${API_BASE_URL}/admin/scraping/stop`, { method: 'POST' });
     } catch {}
     clearInterval(pollRef.current);
     setIsRunning(false);
