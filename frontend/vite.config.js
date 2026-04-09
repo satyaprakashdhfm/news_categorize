@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      axios: path.resolve(__dirname, './node_modules/axios/dist/browser/axios.cjs'),
     },
   },
   server: {
