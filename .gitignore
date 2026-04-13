@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+**/node_modules/
 /.pnp
 .pnp.js
 
@@ -14,6 +15,7 @@
 
 # production
 /build
+/frontend/dist/
 
 # misc
 .DS_Store
@@ -58,3 +60,6 @@ next-env.d.ts
 # Database
 *.db
 *.sqlite
+
+# Deprecated standalone replica (kept ignored if recreated locally)
+/browser_replica_app/
