@@ -12,7 +12,13 @@ echo "[deploy] Branch: ${BRANCH}"
 cd "${APP_DIR}"
 
 echo "[deploy] Syncing git branch..."
+# Remove local frontend artifacts that commonly block branch checkout on long-lived VMs.
+rm -rf "${APP_DIR}/frontend/node_modules" || true
+rm -rf "${APP_DIR}/frontend/dist" || true
+rm -rf "${APP_DIR}/frontend/.vite" || true
+
 git fetch origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
+git reset --hard
 if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
   git checkout "${BRANCH}"
 else
