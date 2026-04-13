@@ -1,0 +1,13 @@
+{
+  "mode": "http",
+  "format": "text",
+  "requestedUrl": "https://example.com",
+  "finalUrl": "https://example.com/",
+  "title": "Example Domain",
+  "text": "This domain is for use in documentation examples without needing permission. Avoid use in operations.Learn more",
+  "truncated": {
+    "text": false,
+    "html": false
+  },
+  "scrapedAt": "2026-03-31T16:23:26.487Z"
+}

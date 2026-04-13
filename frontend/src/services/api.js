@@ -86,3 +86,20 @@ export const customRedditApi = {
     return response.data;
   },
 };
+
+export const browserResearchApi = {
+  run: async (data, config = {}) => {
+    const response = await axios.post(`${API_BASE_URL}/browser-research/run`, data, config);
+    return response.data;
+  },
+
+  getHistory: async (params = {}) => {
+    const response = await axios.get(`${API_BASE_URL}/browser-research/history`, { params });
+    return response.data;
+  },
+
+  getRun: async (runId) => {
+    const response = await axios.get(`${API_BASE_URL}/browser-research/history/${runId}`);
+    return response.data;
+  },
+};

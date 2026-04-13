@@ -36,7 +36,6 @@ backend/venv/
 .venv/
 env/
 ENV/
-/browser_replica_app/
 
 # Python cache
 __pycache__/

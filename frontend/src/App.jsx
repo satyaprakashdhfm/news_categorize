@@ -7,6 +7,7 @@ import CustomPage from './pages/CustomPage';
 import CustomFeedPage from './pages/CustomFeedPage';
 import CustomYouTubePage from './pages/CustomYouTubePage';
 import CustomRedditPage from './pages/CustomRedditPage';
+import BrowserResearchMainPage from './pages/BrowserResearchMainPage';
 import { useDarkMode } from './hooks/useDarkMode';
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
       <Route path="/"       element={<HomePage    isDark={isDark} toggleDark={toggleDark} />} />
       <Route path="/admin"  element={<AdminPage   isDark={isDark} toggleDark={toggleDark} />} />
       <Route path="/custom" element={<CustomPage  isDark={isDark} toggleDark={toggleDark} />} />
+      <Route path="/custom/browser" element={<BrowserResearchMainPage isDark={isDark} toggleDark={toggleDark} />} />
       <Route path="/custom/youtube" element={<CustomYouTubePage isDark={isDark} toggleDark={toggleDark} />} />
       <Route path="/custom/reddit" element={<CustomRedditPage isDark={isDark} toggleDark={toggleDark} />} />
       <Route path="/custom/:agentId" element={<CustomFeedPage isDark={isDark} toggleDark={toggleDark} />} />

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import Header from '@/components/Header';
 import NewsCard from '@/components/NewsCard';
 import { customAgentsApi } from '@/services/api';
@@ -8,6 +8,7 @@ import { ArrowLeft, Sparkles, Play, Square } from 'lucide-react';
 
 export default function CustomFeedPage({ isDark, toggleDark }) {
   const { agentId } = useParams();
+  const navigate = useNavigate();
   const [agent, setAgent] = useState(null);
   const [articles, setArticles] = useState([]);
   const [agentLoading, setAgentLoading] = useState(true);
@@ -23,6 +24,10 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
         setAgentLoading(true);
         const found = await customAgentsApi.getAgent(agentId);
         setAgent(found);
+        const prompt = String(found?.prompt || '').trim();
+        if (prompt) {
+          navigate(`/custom/browser?q=${encodeURIComponent(prompt)}`);
+        }
       } catch (err) {
         console.error(err);
         setAgent(null);

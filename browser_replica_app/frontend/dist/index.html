@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Curio - Global News Intelligence</title>
+    <!-- Anti-FOUC: apply saved theme before React hydrates -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('curio-theme');
+          if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-S8prIeKU.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-ai4G8_6e.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

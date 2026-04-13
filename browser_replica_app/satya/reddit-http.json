@@ -1,0 +1,13 @@
+{
+  "mode": "http",
+  "format": "text",
+  "requestedUrl": "https://www.reddit.com/r/programming",
+  "finalUrl": "https://www.reddit.com/r/programming/",
+  "title": "The heart of the internet",
+  "text": "Open navigation\n\n Go to Reddit Home\n\n Log In\n\n Log in to Reddit\n\n Open settings menu",
+  "truncated": {
+    "text": false,
+    "html": false
+  },
+  "scrapedAt": "2026-03-31T16:23:28.431Z"
+}

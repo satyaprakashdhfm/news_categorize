@@ -1,0 +1,24 @@
+[
+  {
+    "type": "wait",
+    "ms": 1500
+  },
+  {
+    "type": "click",
+    "selector": "button[aria-label='Accept all']"
+  },
+  {
+    "type": "type",
+    "selector": "input[name='q']",
+    "text": "open source ai"
+  },
+  {
+    "type": "press",
+    "selector": "input[name='q']",
+    "key": "Enter"
+  },
+  {
+    "type": "wait",
+    "ms": 2500
+  }
+]

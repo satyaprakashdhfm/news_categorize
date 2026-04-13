@@ -1,0 +1,16 @@
+{
+  "name": "satya-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone browser + readability scraper extracted from OpenClaw architecture patterns",
+  "scripts": {
+    "scrape": "node src/cli.mjs"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "linkedom": "^0.18.12",
+    "playwright": "^1.58.2",
+    "undici": "^7.16.0"
+  }
+}

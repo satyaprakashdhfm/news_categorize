@@ -34,6 +34,13 @@ from app.schemas.custom_reddit import (
     RedditScrapeResponse,
     RedditHistoryResponse,
 )
+from app.schemas.browser_research import (
+    BrowserResearchRequest,
+    BlogItem,
+    BrowserResearchResponse,
+    BrowserResearchRunSummary,
+    BrowserResearchHistoryResponse,
+)
 
 __all__ = [
     "ArticleBase",
@@ -64,4 +71,9 @@ __all__ = [
     "RedditCommunityResult",
     "RedditScrapeResponse",
     "RedditHistoryResponse",
+    "BrowserResearchRequest",
+    "BlogItem",
+    "BrowserResearchResponse",
+    "BrowserResearchRunSummary",
+    "BrowserResearchHistoryResponse",
 ]

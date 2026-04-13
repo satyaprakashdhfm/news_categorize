@@ -1,0 +1,13 @@
+{
+  "mode": "http",
+  "format": "markdown",
+  "requestedUrl": "https://example.com",
+  "finalUrl": "https://example.com/",
+  "title": "Example Domain",
+  "text": "This domain is for use in documentation examples without needing permission. Avoid use in operations.\n[Learn more](https://iana.org/domains/example)",
+  "truncated": {
+    "text": false,
+    "html": false
+  },
+  "scrapedAt": "2026-03-31T16:34:18.896Z"
+}
