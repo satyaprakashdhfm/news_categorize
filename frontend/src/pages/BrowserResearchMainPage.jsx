@@ -112,7 +112,7 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
         reddit_communities_limit: 10,
         reddit_posts_per_community: 10,
         news_count: 8,
-        relevance_threshold: 0.9,
+        relevance_threshold: 0.5,
       });
       setData(res);
       setQuery(res?.query || effectiveQuery);
@@ -149,7 +149,7 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
             Main browser-based flow. Old custom YouTube and custom Reddit pages remain available as backup.
           </p>
           <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-2">
-            Strict mode enabled: only items with 90%+ topic relevance are kept as cards.
+            Relevance mode enabled: only items with 50%+ topic relevance are kept as cards.
           </p>
         </section>
 

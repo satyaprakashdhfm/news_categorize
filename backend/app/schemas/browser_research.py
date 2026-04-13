@@ -11,7 +11,7 @@ class BrowserResearchRequest(BaseModel):
     reddit_communities_limit: int = Field(default=10, ge=1, le=20)
     reddit_posts_per_community: int = Field(default=10, ge=1, le=15)
     news_count: int = Field(default=8, ge=0, le=20)
-    relevance_threshold: float = Field(default=0.9, ge=0.5, le=1.0)
+    relevance_threshold: float = Field(default=0.5, ge=0.5, le=1.0)
 
 
 class BlogItem(BaseModel):
