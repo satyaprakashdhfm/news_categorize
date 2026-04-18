@@ -7,7 +7,7 @@ load_dotenv(dotenv_path=env_path)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import articles, scraping, custom_agents, custom_youtube, custom_reddit, browser_research
+from app.api import articles, scraping, custom_agents, custom_youtube, custom_reddit, browser_research, debug
 from app.core.database import Base, engine
 import app.models  # noqa: F401 - ensure models are registered before create_all
 from app.core.config import settings
@@ -49,6 +49,7 @@ app.include_router(custom_agents.router)
 app.include_router(custom_youtube.router)
 app.include_router(custom_reddit.router)
 app.include_router(browser_research.router)
+app.include_router(debug.router)
 
 
 @app.on_event("startup")

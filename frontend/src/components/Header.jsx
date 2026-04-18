@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Globe, Home, Sun, Moon, Sparkles, BarChart3, Menu, X } from 'lucide-react';
+import { Globe, Home, Sun, Moon, Sparkles, BarChart3, Menu, X, HelpCircle } from 'lucide-react';
 
 export default function Header({ isDark, toggleDark }) {
   const location = useLocation();
@@ -8,6 +8,7 @@ export default function Header({ isDark, toggleDark }) {
   const isHome = location.pathname === '/';
   const isCustom = location.pathname.startsWith('/custom');
   const isUsage = location.pathname.startsWith('/llm-usage');
+  const isHelp = location.pathname.startsWith('/help');
 
   const navLink = (to, isActive, icon, label) => (
     <Link
@@ -51,6 +52,7 @@ export default function Header({ isDark, toggleDark }) {
             {navLink('/', isHome, <Home className="h-4 w-4" />, 'Home')}
             {navLink('/custom', isCustom, <Sparkles className="h-4 w-4" />, 'Custom')}
             {navLink('/llm-usage', isUsage, <BarChart3 className="h-4 w-4" />, 'LLM Usage')}
+            {navLink('/help', isHelp, <HelpCircle className="h-4 w-4" />, 'Help')}
           </div>
 
           {/* Mobile: dark toggle + hamburger */}
@@ -78,6 +80,7 @@ export default function Header({ isDark, toggleDark }) {
             {navLink('/', isHome, <Home className="h-4 w-4" />, 'Home')}
             {navLink('/custom', isCustom, <Sparkles className="h-4 w-4" />, 'Custom')}
             {navLink('/llm-usage', isUsage, <BarChart3 className="h-4 w-4" />, 'LLM Usage')}
+            {navLink('/help', isHelp, <HelpCircle className="h-4 w-4" />, 'Help')}
           </div>
         )}
       </div>

@@ -8,6 +8,7 @@ import CustomYouTubePage from './pages/CustomYouTubePage';
 import CustomRedditPage from './pages/CustomRedditPage';
 import BrowserResearchMainPage from './pages/BrowserResearchMainPage';
 import LLMUsageDashboardPage from './pages/LLMUsageDashboardPage';
+import HelpPage from './pages/HelpPage';
 import { useDarkMode } from './hooks/useDarkMode';
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
       <Route path="/custom/reddit" element={<CustomRedditPage isDark={isDark} toggleDark={toggleDark} />} />
       <Route path="/custom/:agentId" element={<CustomFeedPage isDark={isDark} toggleDark={toggleDark} />} />
       <Route path="/country/:countryCode" element={<CountryPage isDark={isDark} toggleDark={toggleDark} />} />
+      <Route path="/help" element={<HelpPage isDark={isDark} toggleDark={toggleDark} />} />
     </Routes>
   );
 }
