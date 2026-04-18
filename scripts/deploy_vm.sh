@@ -35,25 +35,9 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-echo "[deploy] Installing Playwright OS dependencies..."
-sudo apt-get update
-sudo apt-get install -y \
-  libatk1.0-0 \
-  libatk-bridge2.0-0 \
-  libcups2 \
-  libxcomposite1 \
-  libxdamage1 \
-  libxfixes3 \
-  libxrandr2 \
-  libgbm1 \
-  libxkbcommon0 \
-  libpango-1.0-0 \
-  libcairo2 \
-  libasound2 \
-  libatspi2.0-0
-
-echo "[deploy] Installing Playwright Chromium browser..."
+echo "[deploy] Installing Playwright Chromium browser and OS dependencies..."
 python -m playwright install chromium
+sudo python -m playwright install-deps chromium
 
 deactivate
 
