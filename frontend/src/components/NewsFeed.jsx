@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import NewsCard from './NewsCard';
 import { articlesApi } from '@/services/api';
 
-export default function NewsFeed({ country, categories }) {
+export default function NewsFeed({ country, categories, domainFilter = '', dayFilter = '', windowFilter = '24' }) {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchArticles();
-  }, [country, categories]);
+  }, [country, categories, domainFilter, dayFilter, windowFilter]);
 
   const fetchArticles = async () => {
     try {
@@ -23,6 +23,18 @@ export default function NewsFeed({ country, categories }) {
       
       if (categories.length > 0) {
         params.categories = categories.join(',');
+      }
+
+      if (domainFilter.trim()) {
+        params.domain = domainFilter.trim();
+      }
+
+      if (dayFilter) {
+        params.day = dayFilter;
+      } else if (windowFilter === 'today') {
+        params.day = new Date().toISOString().slice(0, 10);
+      } else if (windowFilter !== 'all') {
+        params.hours_back = Number(windowFilter);
       }
       
       const data = await articlesApi.getArticles(params);

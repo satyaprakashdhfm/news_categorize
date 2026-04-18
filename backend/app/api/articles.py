@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from app.core.database import get_db
 from app.models import Article, StoryThread, CategoryEnum, CountryEnum
 from app.schemas import ArticleResponse, ArticleListResponse, StatsResponse, CountryCount, CategoryCount
@@ -17,6 +17,9 @@ router = APIRouter(prefix="/api/articles", tags=["articles"])
 async def get_articles(
     country: Optional[str] = Query(None),
     categories: Optional[str] = Query(None),
+    domain: Optional[str] = Query(None),
+    day: Optional[str] = Query(None),
+    hours_back: Optional[int] = Query(None, ge=1, le=240),
     limit: int = Query(20, ge=1, le=100),
     stats: bool = Query(False),
     db: Session = Depends(get_db)
@@ -26,12 +29,22 @@ async def get_articles(
     
     - **country**: Filter by country code (e.g., USA, INDIA)
     - **categories**: Comma-separated category codes (e.g., POL,ECO)
+    - **domain**: Filter source URL by domain keyword
+    - **day**: Filter by date (YYYY-MM-DD)
+    - **hours_back**: Filter to recent N hours
     - **limit**: Maximum number of articles to return
     - **stats**: Include statistics in response
     """
     try:
         # Build query
         query = db.query(Article)
+
+        day_value: date | None = None
+        if day:
+            try:
+                day_value = datetime.strptime(day, "%Y-%m-%d").date()
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="day must be YYYY-MM-DD") from exc
         
         if country:
             query = query.filter(Article.country == country)
@@ -40,6 +53,15 @@ async def get_articles(
             category_list = [cat.strip() for cat in categories.split(',') if cat.strip()]
             if category_list:
                 query = query.filter(Article.category.in_(category_list))
+
+        if domain:
+            query = query.filter(Article.source_url.ilike(f"%{domain.strip()}%"))
+
+        if day_value:
+            query = query.filter(func.date(Article.published_at) == day_value)
+        elif hours_back:
+            since = datetime.now() - timedelta(hours=int(hours_back))
+            query = query.filter(Article.published_at >= since)
         
         # Fetch articles
         articles = query.order_by(desc(Article.published_at)).limit(limit).all()

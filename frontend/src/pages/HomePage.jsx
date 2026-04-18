@@ -3,14 +3,16 @@ import Header from '@/components/Header';
 import CategoryFilter from '@/components/CategoryFilter';
 import NewsFeed from '@/components/NewsFeed';
 import { COUNTRIES, CATEGORIES } from '@/utils/helpers';
-import { Play, Square, Loader2, CheckCircle2, XCircle } from 'lucide-react';
-import { articlesApi } from '@/services/api';
+import { Play, Square, Loader2, CheckCircle2, XCircle, Filter, CalendarDays, Clock3 } from 'lucide-react';
 
 export default function HomePage({ isDark, toggleDark }) {
   const [selectedCountry, setSelectedCountry] = useState('INDIA');
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedCountries, setSelectedCountries] = useState(['USA']);
   const [selectedTopics, setSelectedTopics] = useState(['policy']);
+  const [domainFilter, setDomainFilter] = useState('');
+  const [dayFilter, setDayFilter] = useState('');
+  const [windowFilter, setWindowFilter] = useState('24');
   const [isRunning, setIsRunning] = useState(false);
   const [scrapeStats, setScrapeStats] = useState(null);
   const [error, setError] = useState('');
@@ -222,11 +224,86 @@ export default function HomePage({ isDark, toggleDark }) {
           categories={CATEGORIES}
         />
 
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border border-transparent dark:border-gray-700 mt-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Filter className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+            <h3 className="text-lg font-semibold text-secondary-900 dark:text-white">Feed Filters</h3>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Domain</label>
+              <input
+                type="text"
+                value={domainFilter}
+                onChange={(e) => setDomainFilter(e.target.value)}
+                placeholder="reuters.com, bbc, nytimes..."
+                className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Day</label>
+              <div className="relative">
+                <CalendarDays className="absolute left-3 top-2.5 h-4 w-4 text-secondary-400" />
+                <input
+                  type="date"
+                  value={dayFilter}
+                  onChange={(e) => setDayFilter(e.target.value)}
+                  className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 pl-9 pr-3 py-2 text-sm text-secondary-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Time Window</label>
+              <div className="relative">
+                <Clock3 className="absolute left-3 top-2.5 h-4 w-4 text-secondary-400" />
+                <select
+                  value={windowFilter}
+                  onChange={(e) => setWindowFilter(e.target.value)}
+                  disabled={!!dayFilter}
+                  className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 pl-9 pr-3 py-2 text-sm text-secondary-900 dark:text-white disabled:opacity-60"
+                >
+                  <option value="2">Last 2 hours</option>
+                  <option value="6">Last 6 hours</option>
+                  <option value="12">Last 12 hours</option>
+                  <option value="24">Last 24 hours</option>
+                  <option value="48">Last 48 hours</option>
+                  <option value="72">Last 72 hours</option>
+                  <option value="today">Today</option>
+                  <option value="all">All time</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={() => {
+                setDomainFilter('');
+                setDayFilter('');
+                setWindowFilter('24');
+              }}
+              className="px-3 py-2 rounded-lg text-xs font-semibold bg-secondary-100 dark:bg-gray-700 text-secondary-700 dark:text-gray-200"
+            >
+              Reset Feed Filters
+            </button>
+            <span className="text-xs text-secondary-500 dark:text-gray-400">Tip: Day overrides Time Window.</span>
+          </div>
+        </div>
+
         <div className="mt-8">
           <h2 className="text-xl sm:text-2xl font-bold text-secondary-900 dark:text-white mb-4 sm:mb-6">
             Latest Stories from {countryName}
           </h2>
-          <NewsFeed country={selectedCountry} categories={selectedCategories} />
+          <NewsFeed
+            country={selectedCountry}
+            categories={selectedCategories}
+            domainFilter={domainFilter}
+            dayFilter={dayFilter}
+            windowFilter={windowFilter}
+          />
         </div>
       </main>
     </div>
