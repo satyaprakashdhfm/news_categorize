@@ -1,126 +1,242 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Header from '@/components/Header';
 import CategoryFilter from '@/components/CategoryFilter';
 import NewsFeed from '@/components/NewsFeed';
 import GlobalMap from '@/components/GlobalMap';
 import { COUNTRIES, CATEGORIES } from '@/utils/helpers';
-import { TrendingUp } from 'lucide-react';
+import { Play, Square, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { articlesApi } from '@/services/api';
 
 export default function HomePage({ isDark, toggleDark }) {
   const [selectedCountry, setSelectedCountry] = useState('INDIA');
   const [selectedCategories, setSelectedCategories] = useState([]);
-  const [stats, setStats] = useState(null);
+  const [selectedCountries, setSelectedCountries] = useState(['USA']);
+  const [selectedTopics, setSelectedTopics] = useState(['policy']);
+  const [isRunning, setIsRunning] = useState(false);
+  const [scrapeStats, setScrapeStats] = useState(null);
+  const [mapStats, setMapStats] = useState(null);
+  const [error, setError] = useState('');
+  const pollRef = useRef(null);
+
+  const API_BASE_URL = '/api';
+
+  const topics = [
+    { id: 'policy', name: 'Policy & Governance' },
+    { id: 'economy', name: 'Economy' },
+    { id: 'business', name: 'Business' },
+    { id: 'technology', name: 'Science & Technology' },
+  ];
+
+  const toggleCountry = (code) => {
+    setSelectedCountries((prev) => (
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+    ));
+  };
+
+  const toggleTopic = (id) => {
+    setSelectedTopics((prev) => (
+      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]
+    ));
+  };
 
   useEffect(() => {
-    fetchStats();
+    const refreshMapStats = async () => {
+      try {
+        const data = await articlesApi.getArticles({ stats: true, limit: 1 });
+        if (data?.stats) {
+          setMapStats(data.stats);
+        }
+      } catch {
+        // best effort
+      }
+    };
+
+    refreshMapStats();
+    const mapStatsTimer = setInterval(refreshMapStats, 20000);
+
+    return () => {
+      clearInterval(mapStatsTimer);
+      clearInterval(pollRef.current);
+    };
   }, []);
 
-  const fetchStats = async () => {
-    try {
-      const data = await articlesApi.getArticles({ stats: true, limit: 1 });
-      if (data.stats) {
-        setStats(data.stats);
+  const startPolling = () => {
+    clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/admin/scraping/progress`);
+        const data = await res.json();
+        setScrapeStats(data.stats);
+        if (data.status !== 'running') {
+          clearInterval(pollRef.current);
+          setIsRunning(false);
+        }
+      } catch {
+        clearInterval(pollRef.current);
+        setIsRunning(false);
       }
-    } catch (error) {
-      console.error('Error fetching stats:', error);
+    }, 1200);
+  };
+
+  const handleStart = async () => {
+    if (!selectedCountries.length || !selectedTopics.length) {
+      setError('Select at least one country and one topic.');
+      return;
+    }
+    setError('');
+    setIsRunning(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/scraping/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          countries: selectedCountries,
+          topics: selectedTopics,
+          date: new Date().toISOString().slice(0, 10),
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      startPolling();
+    } catch (err) {
+      setError(err.message || 'Failed to start research.');
+      setIsRunning(false);
     }
   };
+
+  const handleStop = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/admin/scraping/stop`, { method: 'POST' });
+    } catch {
+      // best effort
+    }
+    clearInterval(pollRef.current);
+    setIsRunning(false);
+  };
+
+  const total = scrapeStats?.total_to_process || 0;
+  const done = (scrapeStats?.articles_processed || 0) + (scrapeStats?.articles_skipped || 0) + (scrapeStats?.errors || 0);
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+  const countryName = COUNTRIES.find((c) => c.code === selectedCountry)?.name || selectedCountry;
 
   return (
     <div className="min-h-screen bg-secondary-50 dark:bg-gray-900 transition-colors">
       <Header isDark={isDark} toggleDark={toggleDark} />
       
       <main className="container mx-auto px-4 py-8">
-        {/* Stats Section */}
-        {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-transparent dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-secondary-500 dark:text-gray-400">Total Articles</p>
-                  <p className="text-2xl font-bold text-secondary-900 dark:text-white">
-                    {stats.total_articles}
-                  </p>
-                </div>
-                <TrendingUp className="h-8 w-8 text-primary-600 dark:text-primary-400" />
-              </div>
+        <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-secondary-100 dark:border-gray-700 p-6 md:p-8 mb-8">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-primary-600 dark:text-primary-400 font-semibold">Control Center</p>
+              <h1 className="text-3xl md:text-4xl font-bold text-secondary-900 dark:text-white mt-2">Global Research & Coverage</h1>
+              <p className="text-secondary-600 dark:text-gray-300 mt-2">Admin controls are merged here. Start research and explore countries from the world map below.</p>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-transparent dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-secondary-500 dark:text-gray-400">Recent (24h)</p>
-                  <p className="text-2xl font-bold text-secondary-900 dark:text-white">
-                    {stats.recent_articles}
-                  </p>
-                </div>
-                <TrendingUp className="h-8 w-8 text-green-600 dark:text-green-400" />
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-transparent dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-secondary-500 dark:text-gray-400">Active Threads</p>
-                  <p className="text-2xl font-bold text-secondary-900 dark:text-white">
-                    {stats.active_threads}
-                  </p>
-                </div>
-                <TrendingUp className="h-8 w-8 text-purple-600 dark:text-purple-400" />
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-transparent dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-secondary-500 dark:text-gray-400">Countries</p>
-                  <p className="text-2xl font-bold text-secondary-900 dark:text-white">
-                    {stats.country_counts?.length || 0}
-                  </p>
-                </div>
-                <TrendingUp className="h-8 w-8 text-orange-600 dark:text-orange-400" />
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* Global Map */}
-        <div className="mb-8">
-          <GlobalMap stats={stats} />
-        </div>
-
-        {/* Country Selector */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6 border border-transparent dark:border-gray-700">
-          <h3 className="text-lg font-semibold text-secondary-900 dark:text-white mb-4">
-            Select Country
-          </h3>
-          <div className="flex flex-wrap gap-3">
-            {COUNTRIES.map((country) => (
+            {isRunning ? (
               <button
-                key={country.code}
-                onClick={() => setSelectedCountry(country.code)}
-                className={`px-6 py-3 rounded-lg font-medium transition-all ${
-                  selectedCountry === country.code
-                    ? 'bg-primary-600 text-white shadow-lg scale-105'
-                    : 'bg-secondary-100 dark:bg-gray-700 text-secondary-700 dark:text-gray-300 hover:bg-secondary-200 dark:hover:bg-gray-600'
-                }`}
+                onClick={handleStop}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold shadow"
               >
-                <span className="mr-2">{country.flag}</span>
-                {country.name}
+                <Square className="h-4 w-4" />
+                Stop Research
               </button>
-            ))}
+            ) : (
+              <button
+                onClick={handleStart}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-semibold shadow"
+              >
+                <Play className="h-4 w-4" />
+                Start Research
+              </button>
+            )}
           </div>
+
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-secondary-500 dark:text-gray-400 mb-2">Countries</p>
+              <div className="flex flex-wrap gap-2">
+                {COUNTRIES.map((country) => (
+                  <button
+                    key={country.code}
+                    onClick={() => !isRunning && toggleCountry(country.code)}
+                    disabled={isRunning}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${selectedCountries.includes(country.code)
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-secondary-100 dark:bg-gray-700 text-secondary-700 dark:text-gray-300 hover:bg-secondary-200 dark:hover:bg-gray-600'} ${isRunning ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  >
+                    {country.flag} {country.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-secondary-500 dark:text-gray-400 mb-2">Topics</p>
+              <div className="flex flex-wrap gap-2">
+                {topics.map((topic) => (
+                  <button
+                    key={topic.id}
+                    onClick={() => !isRunning && toggleTopic(topic.id)}
+                    disabled={isRunning}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${selectedTopics.includes(topic.id)
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-secondary-100 dark:bg-gray-700 text-secondary-700 dark:text-gray-300 hover:bg-secondary-200 dark:hover:bg-gray-600'} ${isRunning ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  >
+                    {topic.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {error ? (
+            <div className="mt-5 flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+              <XCircle className="h-4 w-4" /> {error}
+            </div>
+          ) : null}
+
+          {scrapeStats ? (
+            <div className="mt-5">
+              <div className="flex items-center justify-between text-xs text-secondary-500 dark:text-gray-400 mb-1">
+                <span>{done} / {total} processed</span>
+                <span>{pct}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-secondary-100 dark:bg-gray-700 overflow-hidden">
+                <div className="h-full bg-primary-600 transition-all duration-500" style={{ width: `${pct}%` }} />
+              </div>
+
+              <div className="mt-3 text-sm text-secondary-700 dark:text-gray-300 flex items-center gap-2">
+                {isRunning ? <Loader2 className="h-4 w-4 animate-spin text-primary-600 dark:text-primary-400" /> : <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />}
+                {isRunning ? 'Research is running...' : 'Research is idle'}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="mb-8">
+          <GlobalMap
+            stats={mapStats}
+            selectedCountry={selectedCountry}
+            onSelectCountry={setSelectedCountry}
+          />
+        </section>
+
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border border-transparent dark:border-gray-700 mb-6">
+          <h3 className="text-lg font-semibold text-secondary-900 dark:text-white">Selected Country: {countryName}</h3>
+          <p className="text-sm text-secondary-600 dark:text-gray-300 mt-1">Pick any country from the world map and filter stories below.</p>
         </div>
 
-        {/* Category Filter */}
         <CategoryFilter
           selectedCategories={selectedCategories}
           onChange={setSelectedCategories}
           categories={CATEGORIES}
         />
 
-        {/* News Feed */}
         <div className="mt-8">
-          <h2 className="text-2xl font-bold text-secondary-900 dark:text-white mb-6">
-            Latest Stories from {COUNTRIES.find(c => c.code === selectedCountry)?.name}
+          <h2 className="text-xl sm:text-2xl font-bold text-secondary-900 dark:text-white mb-4 sm:mb-6">
+            Latest Stories from {countryName}
           </h2>
           <NewsFeed country={selectedCountry} categories={selectedCategories} />
         </div>

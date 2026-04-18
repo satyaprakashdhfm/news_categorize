@@ -43,16 +43,14 @@ export default function CountryPage({ isDark, toggleDark }) {
         </Link>
 
         {/* Country Header */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-800 dark:from-gray-800 dark:to-gray-700 rounded-lg shadow-lg p-8 mb-8 text-white">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <div className="text-8xl">{country.flag}</div>
-              <div>
-                <h1 className="text-4xl font-bold mb-2">{country.name}</h1>
-                <p className="text-primary-100 dark:text-gray-300 text-lg">
-                  GDP: {country.gdp} • Code: {country.code}
-                </p>
-              </div>
+        <div className="bg-gradient-to-r from-primary-600 to-primary-800 dark:from-gray-800 dark:to-gray-700 rounded-lg shadow-lg p-4 sm:p-6 md:p-8 mb-6 md:mb-8 text-white">
+          <div className="flex items-center gap-4 sm:gap-6">
+            <div className="text-4xl sm:text-6xl md:text-8xl flex-shrink-0">{country.flag}</div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-1 sm:mb-2">{country.name}</h1>
+              <p className="text-primary-100 dark:text-gray-300 text-sm sm:text-base md:text-lg">
+                GDP: {country.gdp} • Code: {country.code}
+              </p>
             </div>
           </div>
         </div>

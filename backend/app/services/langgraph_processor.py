@@ -2,34 +2,11 @@ from typing import Optional, TypedDict
 from google import genai
 from langgraph.graph import StateGraph, END
 from app.core.config import settings
+from app.core.observability import get_langfuse
 import logging
 import time
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Langfuse client — initialised once, optional (gracefully skipped if keys missing)
-# ---------------------------------------------------------------------------
-_langfuse = None
-
-def _get_langfuse():
-    global _langfuse
-    if _langfuse is not None:
-        return _langfuse
-    if not settings.LANGFUSE_SECRET_KEY or not settings.LANGFUSE_PUBLIC_KEY:
-        return None
-    try:
-        from langfuse import Langfuse
-        _langfuse = Langfuse(
-            secret_key=settings.LANGFUSE_SECRET_KEY,
-            public_key=settings.LANGFUSE_PUBLIC_KEY,
-            host=settings.LANGFUSE_BASE_URL,
-        )
-        logger.info("[LANGFUSE] Client initialised — observability active")
-    except Exception as e:
-        logger.warning(f"[LANGFUSE] Could not initialise client: {e}")
-        _langfuse = None
-    return _langfuse
 
 
 class NewsProcessingState(TypedDict):
@@ -44,6 +21,7 @@ class NewsProcessingState(TypedDict):
     parent_id: Optional[str]
     existing_articles: list
     decision: Optional[str]
+    trace_id: Optional[str]
 
 
 class NewsProcessorGraph:
@@ -52,11 +30,11 @@ class NewsProcessorGraph:
     def __init__(self):
         """Initialize the news processor with Gemini and optional Langfuse tracing"""
         self.client = genai.Client(api_key=settings.GOOGLE_API_KEY)
-        self.model = "gemini-3-flash-preview"
+        self.model = settings.GEMINI_MODEL
         self.graph = self._build_graph()
         logger.info("[LANGGRAPH] NewsProcessor initialized with Gemini")
         # ensure Langfuse is reachable at startup
-        _get_langfuse()
+        get_langfuse()
     
     def _classify_category_node(self, state: NewsProcessingState) -> NewsProcessingState:
         """Node: Classify article category using LLM"""
@@ -79,7 +57,7 @@ class NewsProcessorGraph:
             category = response.text.strip().upper()
 
             # --- Langfuse: log generation ---
-            lf = _get_langfuse()
+            lf = get_langfuse()
             if lf:
                 usage = getattr(response, "usage_metadata", None)
                 lf.generation(
@@ -87,6 +65,7 @@ class NewsProcessorGraph:
                     model=self.model,
                     input=prompt,
                     output=category,
+                    trace_id=state.get("trace_id"),
                     metadata={"country": state.get("country"), "title": state["title"][:80]},
                     usage={
                         "input": getattr(usage, "prompt_token_count", 0),
@@ -136,7 +115,7 @@ class NewsProcessorGraph:
             logger.info(f"[LANGGRAPH] Summary generated: {len(state['summary'])} chars")
 
             # --- Langfuse: log generation ---
-            lf = _get_langfuse()
+            lf = get_langfuse()
             if lf:
                 usage = getattr(response, "usage_metadata", None)
                 lf.generation(
@@ -144,6 +123,7 @@ class NewsProcessorGraph:
                     model=self.model,
                     input=prompt,
                     output=state['summary'],
+                    trace_id=state.get("trace_id"),
                     metadata={"country": state.get("country"), "title": state["title"][:80]},
                     usage={
                         "input": getattr(usage, "prompt_token_count", 0),
@@ -197,7 +177,7 @@ class NewsProcessorGraph:
             logger.info(f"[LANGGRAPH] Threading decision: {decision}")
 
             # --- Langfuse: log generation ---
-            lf = _get_langfuse()
+            lf = get_langfuse()
             if lf:
                 usage = getattr(response, "usage_metadata", None)
                 lf.generation(
@@ -205,6 +185,7 @@ class NewsProcessorGraph:
                     model=self.model,
                     input=prompt,
                     output=decision,
+                    trace_id=state.get("trace_id"),
                     metadata={"country": state.get("country"), "title": state["title"][:80]},
                     usage={
                         "input": getattr(usage, "prompt_token_count", 0),
@@ -244,13 +225,14 @@ class NewsProcessorGraph:
         content: str,
         url: str,
         country: str,
-        existing_articles: list = None
+        existing_articles: list = None,
+        parent_trace_id: str = None
     ) -> dict:
         """Process a single article through the LangGraph workflow"""
         logger.info(f"[LANGGRAPH] Starting article processing: {title[:50]}...")
 
         # --- Langfuse: open a trace for this article ---
-        lf = _get_langfuse()
+        lf = get_langfuse()
         trace = None
         if lf:
             trace = lf.trace(
@@ -258,6 +240,7 @@ class NewsProcessorGraph:
                 input={"title": title, "url": url, "country": country},
                 metadata={"country": country},
                 tags=[country],
+                parent_trace_id=parent_trace_id,
             )
 
         t_start = time.time()
@@ -272,7 +255,8 @@ class NewsProcessorGraph:
             thread_id=None,
             parent_id=None,
             existing_articles=existing_articles or [],
-            decision=None
+            decision=None,
+            trace_id=trace.id if trace else None
         )
         
         # Run the graph

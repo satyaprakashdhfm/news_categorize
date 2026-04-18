@@ -46,24 +46,90 @@ class RedditScrapingService:
     def _fallback_summary(title: str, selftext: str | None) -> str:
         content = (selftext or "").strip().replace("\n", " ")
         if content:
-            return content[:220]
-        return f"Reddit post about: {title}"[:220]
+            return content[:1200]
+        return f"Reddit post about: {title}"[:400]
 
-    def _summarize_post(self, title: str, selftext: str | None) -> str:
+    @staticmethod
+    def _word_count(text: str | None) -> int:
+        if not text:
+            return 0
+        return len([w for w in text.strip().split() if w])
+
+    @staticmethod
+    def _collect_comment_lines(comment_listing: list[dict[str, Any]] | None, max_items: int = 20) -> list[str]:
+        if not comment_listing:
+            return []
+
+        comments = (((comment_listing[1] or {}).get("data") or {}).get("children") or [])
+        lines: list[str] = []
+
+        def walk(nodes: list[dict[str, Any]]) -> None:
+            for node in nodes:
+                if len(lines) >= max_items:
+                    return
+                data = (node or {}).get("data") or {}
+                body = (data.get("body") or "").strip()
+                if body:
+                    author = data.get("author") or "user"
+                    score = int(data.get("score") or 0)
+                    lines.append(f"- ({score}) {author}: {body[:320]}")
+
+                replies = (((data.get("replies") or {}).get("data") or {}).get("children") or [])
+                if replies and len(lines) < max_items:
+                    walk(replies)
+
+        walk(comments)
+        return lines[:max_items]
+
+    @staticmethod
+    def _extract_response_text(response) -> str:
+        texts: list[str] = []
+        for candidate in (getattr(response, "candidates", None) or []):
+            content = getattr(candidate, "content", None)
+            for part in (getattr(content, "parts", None) or []):
+                value = getattr(part, "text", None)
+                if isinstance(value, str) and value.strip():
+                    texts.append(value.strip())
+        return "\n".join(texts).strip()
+
+    def _summarize_post(self, title: str, selftext: str | None, comment_lines: list[str] | None = None) -> str:
         if not self._client:
             return self._fallback_summary(title, selftext)
 
+        comments_block = "\n".join(comment_lines or [])
         prompt = (
-            "Summarize this reddit post in simple normal style in 2 sentences.\n\n"
+            "Create a complete, high-accuracy Reddit discussion brief in 12 to 18 sentences. "
+            "Minimum length: 240 words. "
+            "Use only provided content. Do not invent facts. Cover: what the original post says, what people agree on, "
+            "what people disagree on, key questions raised by commenters, and practical insights. "
+            "Write in clear plain English as one readable block.\n\n"
             f"Title: {title}\n"
-            f"Body: {selftext or ''}"
+            f"Post Body: {selftext or ''}\n\n"
+            f"Top Comments and Questions:\n{comments_block or '- no comments captured'}"
         )
         try:
             response = self._client.models.generate_content(
-                model="gemini-3-flash-preview",
+                model=settings.GEMINI_MODEL,
                 contents=prompt,
             )
-            text = (response.text or "").strip()
+            text = self._extract_response_text(response)
+
+            if self._word_count(text) < 200:
+                expand_prompt = (
+                    "Expand and deepen this Reddit analysis to at least 260 words. "
+                    "Preserve factual accuracy, include discussion viewpoints and concrete insights, "
+                    "and avoid repetition. Use only the source content below.\n\n"
+                    f"Source details:\n{prompt}\n\n"
+                    f"Draft summary:\n{text}"
+                )
+                expand_response = self._client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=expand_prompt,
+                )
+                expanded_text = self._extract_response_text(expand_response)
+                if expanded_text:
+                    text = expanded_text
+
             return text or self._fallback_summary(title, selftext)
         except Exception:
             return self._fallback_summary(title, selftext)
@@ -96,6 +162,7 @@ class RedditScrapingService:
         for node in children[:limit]:
             data = node.get("data") or {}
             post_url = data.get("url") or ""
+            permalink = data.get("permalink") or ""
             created = data.get("created_utc")
             published_at = None
             if created:
@@ -103,8 +170,20 @@ class RedditScrapingService:
 
             title = (data.get("title") or "Untitled").strip()
             selftext = data.get("selftext") or None
+            comment_lines: list[str] = []
+
+            if permalink:
+                comments_url = f"https://www.reddit.com{permalink}.json"
+                try:
+                    async with session.get(comments_url, params={"limit": "25", "sort": "top"}, timeout=25) as c_resp:
+                        if c_resp.status == 200:
+                            comment_payload = await c_resp.json()
+                            comment_lines = self._collect_comment_lines(comment_payload, max_items=35)
+                except Exception:
+                    comment_lines = []
+
             if summarize:
-                summary = await asyncio.to_thread(self._summarize_post, title, selftext)
+                summary = await asyncio.to_thread(self._summarize_post, title, selftext, comment_lines)
             else:
                 summary = self._fallback_summary(title, selftext)
 

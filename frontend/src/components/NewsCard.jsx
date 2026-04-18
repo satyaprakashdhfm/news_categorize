@@ -19,12 +19,12 @@ export default function NewsCard({ article }) {
         <img
           src={article.image_url}
           alt={article.title}
-          className="w-full h-48 object-cover"
+          className="w-full h-36 sm:h-44 md:h-48 object-cover"
         />
       )}
-      <div className="p-6">
+      <div className="p-4 sm:p-5 md:p-6">
         <div className="flex items-center justify-between mb-3">
-          <span className={cn('px-3 py-1 rounded-full text-xs font-semibold', categoryColorMap[article.category] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300')}>
+          <span className={cn('px-2 sm:px-3 py-1 rounded-full text-xs font-semibold', categoryColorMap[article.category] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300')}>
             {category?.icon} {category?.name || article.category}
           </span>
           <span className="text-xs text-secondary-500 dark:text-gray-400 flex items-center">
@@ -33,7 +33,7 @@ export default function NewsCard({ article }) {
           </span>
         </div>
 
-        <h3 className="text-xl font-bold text-secondary-900 dark:text-white mb-2 line-clamp-2">
+        <h3 className="text-base sm:text-lg md:text-xl font-bold text-secondary-900 dark:text-white mb-2 line-clamp-2">
           {article.title}
         </h3>
 

@@ -11,8 +11,8 @@ export default function CategoryFilter({ selectedCategories, onChange, categorie
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-transparent dark:border-gray-700">
-      <h3 className="text-lg font-semibold text-secondary-900 dark:text-white mb-4">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6 border border-transparent dark:border-gray-700">
+      <h3 className="text-base sm:text-lg font-semibold text-secondary-900 dark:text-white mb-3 sm:mb-4">
         Filter by Category
       </h3>
       <div className="flex flex-wrap gap-2">

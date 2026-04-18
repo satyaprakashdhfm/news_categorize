@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -78,16 +78,71 @@ async def scrape_custom_reddit(request: RedditScrapeRequest, db: Session = Depen
 @router.get("/history", response_model=RedditHistoryResponse)
 async def get_reddit_history(
     community: str | None = Query(None),
+    topic: str | None = Query(None),
+    day: str | None = Query(None),
+    hours_back: int | None = Query(None, ge=1, le=240),
+    mode: str | None = Query(None),
     limit: int = Query(200, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     query = db.query(CustomRedditPost)
+    runs_query = db.query(CustomRedditPost.run_id)
+
+    day_value: date | None = None
+    if day:
+        try:
+            day_value = datetime.strptime(day, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="day must be YYYY-MM-DD") from exc
+
     if community:
-        query = query.filter(CustomRedditPost.subreddit == community)
+        like = f"%{community.strip()}%"
+        query = query.filter(CustomRedditPost.subreddit.ilike(like))
+        runs_query = runs_query.filter(CustomRedditPost.subreddit.ilike(like))
+
+    if mode:
+        query = query.filter(CustomRedditPost.mode == mode)
+        runs_query = runs_query.filter(CustomRedditPost.mode == mode)
+
+    if topic:
+        like = f"%{topic.strip()}%"
+        query = query.filter(
+            or_(
+                CustomRedditPost.title.ilike(like),
+                CustomRedditPost.summary.ilike(like),
+                CustomRedditPost.selftext.ilike(like),
+            )
+        )
+        runs_query = runs_query.filter(
+            or_(
+                CustomRedditPost.title.ilike(like),
+                CustomRedditPost.summary.ilike(like),
+                CustomRedditPost.selftext.ilike(like),
+            )
+        )
+
+    if day_value:
+        query = query.filter(func.date(CustomRedditPost.scraped_at) == day_value)
+        runs_query = runs_query.filter(func.date(CustomRedditPost.scraped_at) == day_value)
+    elif hours_back:
+        since = datetime.now() - timedelta(hours=int(hours_back))
+        query = query.filter(CustomRedditPost.scraped_at >= since)
+        runs_query = runs_query.filter(CustomRedditPost.scraped_at >= since)
 
     rows = query.order_by(desc(CustomRedditPost.scraped_at)).limit(limit).all()
+
+    total_runs = runs_query.distinct().count()
+    runs_today = (
+        db.query(CustomRedditPost.run_id)
+        .filter(func.date(CustomRedditPost.scraped_at) == datetime.now().date())
+        .distinct()
+        .count()
+    )
+
     posts = [
         {
+            "run_id": row.run_id,
+            "mode": row.mode,
             "post_id": row.post_id,
             "subreddit": row.subreddit,
             "title": row.title,
@@ -98,8 +153,14 @@ async def get_reddit_history(
             "score": int(row.score or 0),
             "num_comments": int(row.num_comments or 0),
             "published_at": row.published_at,
+            "scraped_at": row.scraped_at,
         }
         for row in rows
     ]
 
-    return RedditHistoryResponse(total_posts=len(posts), posts=posts)
+    return RedditHistoryResponse(
+        total_posts=len(posts),
+        total_runs=total_runs,
+        runs_today=runs_today,
+        posts=posts,
+    )

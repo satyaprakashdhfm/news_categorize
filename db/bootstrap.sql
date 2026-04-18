@@ -138,7 +138,49 @@ CREATE TABLE IF NOT EXISTS custom_reddit_posts (
     "scrapedAt" TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- 10) Indexes matching model declarations and common lookups
+-- 10) Browser research runs
+CREATE TABLE IF NOT EXISTS browser_research_runs (
+    run_id VARCHAR PRIMARY KEY,
+    query VARCHAR NOT NULL,
+    selected_reddit_communities TEXT NOT NULL DEFAULT '[]',
+    youtube_channels_used TEXT NOT NULL DEFAULT '[]',
+    total_blogs INTEGER NOT NULL DEFAULT 0,
+    generated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- 11) Browser research items
+CREATE TABLE IF NOT EXISTS browser_research_items (
+    id SERIAL PRIMARY KEY,
+    run_id VARCHAR NOT NULL,
+    source VARCHAR NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    url TEXT NOT NULL,
+    community VARCHAR,
+    channel VARCHAR,
+    author VARCHAR,
+    score INTEGER,
+    comments INTEGER,
+    published_at VARCHAR,
+    CONSTRAINT fk_browser_research_items_run
+        FOREIGN KEY (run_id) REFERENCES browser_research_runs(run_id) ON DELETE CASCADE
+);
+
+-- 12) Browser research run metrics
+CREATE TABLE IF NOT EXISTS browser_research_run_metrics (
+    run_id VARCHAR PRIMARY KEY,
+    llm_model VARCHAR,
+    llm_calls INTEGER NOT NULL DEFAULT 0,
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    estimated_cost_usd TEXT NOT NULL DEFAULT '0',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_browser_research_run_metrics_run
+        FOREIGN KEY (run_id) REFERENCES browser_research_runs(run_id) ON DELETE CASCADE
+);
+
+-- 13) Indexes matching model declarations and common lookups
 CREATE INDEX IF NOT EXISTS idx_custom_agent_feed_agent_id
     ON custom_agent_feed_articles (agent_id);
 
@@ -162,5 +204,8 @@ CREATE INDEX IF NOT EXISTS idx_custom_reddit_posts_mode
 
 CREATE INDEX IF NOT EXISTS idx_custom_reddit_posts_post_id
     ON custom_reddit_posts (post_id);
+
+CREATE INDEX IF NOT EXISTS idx_browser_research_items_run_id
+    ON browser_research_items (run_id);
 
 COMMIT;

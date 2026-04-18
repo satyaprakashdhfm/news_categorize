@@ -1,5 +1,6 @@
 from app.services.langgraph_processor import get_news_processor_graph
 from app.services.article_extractor_service import article_extractor_service
+from app.core.observability import get_langfuse
 from sqlalchemy.orm import Session
 from app.models import Article, StoryThread, CategoryEnum, CountryEnum
 from datetime import datetime
@@ -49,6 +50,16 @@ class NewsScrapingService:
         if self.is_running:
             raise Exception("Scraping is already running")
         
+        lf = get_langfuse()
+        trace = None
+        if lf:
+            trace = lf.trace(
+                name="news_scraping_batch",
+                input={"countries": countries, "topics": topics, "date": date},
+                tags=["scraping"],
+            )
+
+        t_start = time.time()
         self.is_running = True
         self.should_stop = False
         self.stats["status"] = "running"
@@ -113,13 +124,24 @@ class NewsScrapingService:
                                 content=result.get("content", ""),
                                 url=result.get("url", ""),
                                 country=country,
-                                published_at=result.get("published_date", datetime.now().isoformat())
+                                published_at=result.get("published_date", datetime.now().isoformat()),
+                                parent_trace_id=trace.id if trace else None
                             )
             
             self.stats["status"] = "completed"
             logger.info("[SCRAPER] Scraping completed successfully")
             logger.info(f"[SCRAPER] Final stats: {self.stats['articles_processed']} processed, {self.stats['articles_skipped']} skipped, {self.stats['errors']} errors")
             
+            if trace:
+                try:
+                    trace.update(
+                        output=self.stats,
+                        metadata={"latency_ms": int((time.time() - t_start) * 1000)},
+                    )
+                    lf.flush()
+                except Exception as e:
+                    logger.warning(f"[LANGFUSE] Failed to update trace: {e}")
+
         except Exception as e:
             logger.error(f"[SCRAPER] Fatal error: {e}")
             self.stats["status"] = "error"
@@ -170,7 +192,8 @@ class NewsScrapingService:
         content: str,
         url: str,
         country: str,
-        published_at: str
+        published_at: str,
+        parent_trace_id: str = None
     ):
         """Process a single article using LangGraph with safety checks"""
         try:
@@ -251,7 +274,8 @@ class NewsScrapingService:
                     content=extracted_content or extracted_title,
                     url=url,
                     country=country,
-                    existing_articles=existing_articles_data
+                    existing_articles=existing_articles_data,
+                    parent_trace_id=parent_trace_id
                 )
             except Exception as ai_error:
                 logger.error(f"[SCRAPER] AI processing failed for {url}: {ai_error}")

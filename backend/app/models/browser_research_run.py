@@ -23,6 +23,13 @@ class BrowserResearchRun(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    metrics = relationship(
+        "BrowserResearchRunMetric",
+        back_populates="run",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class BrowserResearchItem(Base):
@@ -42,3 +49,18 @@ class BrowserResearchItem(Base):
     published_at = Column(String, nullable=True)
 
     run = relationship("BrowserResearchRun", back_populates="items")
+
+
+class BrowserResearchRunMetric(Base):
+    __tablename__ = "browser_research_run_metrics"
+
+    run_id = Column(String, ForeignKey("browser_research_runs.run_id", ondelete="CASCADE"), primary_key=True)
+    llm_model = Column(String, nullable=True)
+    llm_calls = Column(Integer, nullable=False, default=0)
+    prompt_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+    total_tokens = Column(Integer, nullable=False, default=0)
+    estimated_cost_usd = Column(Text, nullable=False, default="0")
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    run = relationship("BrowserResearchRun", back_populates="metrics")

@@ -118,8 +118,8 @@ export default function AdminPage({ isDark, toggleDark }) {
         <div className="max-w-4xl mx-auto space-y-6">
 
           {/* Header card */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 border border-transparent dark:border-gray-700">
-            <h1 className="text-3xl font-bold text-secondary-900 dark:text-white mb-1">News Research</h1>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 sm:p-6 md:p-8 border border-transparent dark:border-gray-700">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-secondary-900 dark:text-white mb-1">News Research</h1>
             <p className="text-secondary-500 dark:text-gray-400 mb-6">AI-powered global news scraper with live observability</p>
 
             {/* Country selector */}

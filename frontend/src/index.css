@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import 'leaflet/dist/leaflet.css';
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -28,4 +30,23 @@ html {
 /* Dark mode base colours */
 html.dark {
   color-scheme: dark;
+}
+
+.leaflet-container {
+  font-family: inherit;
+}
+
+.country-pin {
+  background: transparent;
+  border: 0;
+}
+
+.country-pin-dot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.24);
 }

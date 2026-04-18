@@ -11,13 +11,16 @@ class YouTubeScrapeRequest(BaseModel):
 
 
 class YouTubeVideoItem(BaseModel):
+    run_id: Optional[str] = None
     video_id: Optional[str] = None
+    channel_input: Optional[str] = None
     video_url: str
     title: str
     description: Optional[str] = None
     summary: Optional[str] = None
     published_at: Optional[str] = None
     channel_title: Optional[str] = None
+    scraped_at: Optional[datetime] = None
 
 
 class YouTubeChannelResult(BaseModel):
@@ -36,4 +39,6 @@ class YouTubeScrapeResponse(BaseModel):
 
 class YouTubeHistoryResponse(BaseModel):
     total_videos: int
+    total_runs: int = 0
+    runs_today: int = 0
     videos: List[YouTubeVideoItem]

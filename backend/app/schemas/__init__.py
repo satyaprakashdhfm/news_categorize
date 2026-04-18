@@ -37,6 +37,7 @@ from app.schemas.custom_reddit import (
 from app.schemas.browser_research import (
     BrowserResearchRequest,
     BlogItem,
+    LLMUsageSummary,
     BrowserResearchResponse,
     BrowserResearchRunSummary,
     BrowserResearchHistoryResponse,
@@ -73,6 +74,7 @@ __all__ = [
     "RedditHistoryResponse",
     "BrowserResearchRequest",
     "BlogItem",
+    "LLMUsageSummary",
     "BrowserResearchResponse",
     "BrowserResearchRunSummary",
     "BrowserResearchHistoryResponse",

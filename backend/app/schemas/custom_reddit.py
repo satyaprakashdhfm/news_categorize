@@ -12,6 +12,8 @@ class RedditScrapeRequest(BaseModel):
 
 
 class RedditPostItem(BaseModel):
+    run_id: Optional[str] = None
+    mode: Optional[str] = None
     post_id: Optional[str] = None
     subreddit: str
     title: str
@@ -22,6 +24,7 @@ class RedditPostItem(BaseModel):
     score: int
     num_comments: int
     published_at: Optional[str] = None
+    scraped_at: Optional[datetime] = None
 
 
 class RedditCommunityResult(BaseModel):
@@ -40,4 +43,6 @@ class RedditScrapeResponse(BaseModel):
 
 class RedditHistoryResponse(BaseModel):
     total_posts: int
+    total_runs: int = 0
+    runs_today: int = 0
     posts: List[RedditPostItem]

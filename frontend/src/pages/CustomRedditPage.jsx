@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Header from '@/components/Header';
 import { customRedditApi } from '@/services/api';
-import { ArrowLeft, Play, Square } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Clock3, Filter, Play, Square } from 'lucide-react';
 
 function normalizeCommunities(text) {
   return (text || '')
@@ -19,6 +19,11 @@ export default function CustomRedditPage({ isDark, toggleDark }) {
   const [scraping, setScraping] = useState(false);
   const [error, setError] = useState('');
   const [log, setLog] = useState([]);
+  const [communityFilter, setCommunityFilter] = useState('');
+  const [topicFilter, setTopicFilter] = useState('');
+  const [modeFilter, setModeFilter] = useState('');
+  const [dayFilter, setDayFilter] = useState('');
+  const [windowFilter, setWindowFilter] = useState('today');
   const abortRef = useRef(null);
 
   const communities = useMemo(() => normalizeCommunities(communitiesText), [communitiesText]);
@@ -27,10 +32,38 @@ export default function CustomRedditPage({ isDark, toggleDark }) {
     setLog((prev) => [`${new Date().toLocaleTimeString()} ${line}`, ...prev].slice(0, 30));
   };
 
+  const formatPublished = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const maybeDate = new Date(raw);
+    if (!Number.isNaN(maybeDate.getTime())) {
+      return maybeDate.toLocaleString();
+    }
+    return raw;
+  };
+
   const loadHistory = async () => {
     try {
       setLoadingHistory(true);
-      const data = await customRedditApi.getHistory({ limit: 200 });
+      const params = { limit: 200 };
+      if (communityFilter.trim()) {
+        params.community = communityFilter.trim();
+      }
+      if (topicFilter.trim()) {
+        params.topic = topicFilter.trim();
+      }
+      if (modeFilter) {
+        params.mode = modeFilter;
+      }
+      if (dayFilter) {
+        params.day = dayFilter;
+      } else if (windowFilter === 'today') {
+        params.day = new Date().toISOString().slice(0, 10);
+      } else if (windowFilter !== 'all') {
+        params.hours_back = Number(windowFilter);
+      }
+
+      const data = await customRedditApi.getHistory(params);
       setHistory(data?.posts || []);
     } catch (err) {
       console.error(err);
@@ -42,7 +75,7 @@ export default function CustomRedditPage({ isDark, toggleDark }) {
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [communityFilter, topicFilter, modeFilter, dayFilter, windowFilter]);
 
   const handleStart = async () => {
     if (!communities.length || scraping) {
@@ -61,7 +94,7 @@ export default function CustomRedditPage({ isDark, toggleDark }) {
         {
           communities,
           mode,
-          posts_per_community: 10,
+          posts_per_community: 5,
           summarize: true,
         },
         { signal: abortRef.current.signal }
@@ -104,7 +137,7 @@ export default function CustomRedditPage({ isDark, toggleDark }) {
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-6 border border-transparent dark:border-gray-700">
             <h1 className="text-2xl font-bold text-secondary-900 dark:text-white mb-2">Custom Reddit Scraper</h1>
             <p className="text-secondary-600 dark:text-gray-400 mb-4">
-              Input communities. Fetch top today / hot / new with latest 10 posts each plus summaries.
+              Input communities. Fetch top today / hot / new with latest 5 posts each and full blog-style summaries.
             </p>
 
             <label className="block text-sm font-semibold text-secondary-800 dark:text-gray-200 mb-2">
@@ -152,6 +185,103 @@ export default function CustomRedditPage({ isDark, toggleDark }) {
                 Stop
               </button>
             </div>
+
+            <p className="mt-3 text-xs text-secondary-500 dark:text-gray-400">
+              Full summary cards include context, key points, and a small source link at the end.
+            </p>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 mb-6 border border-transparent dark:border-gray-700">
+            <div className="flex items-center gap-2 mb-4">
+              <Filter className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+              <h2 className="text-lg font-semibold text-secondary-900 dark:text-white">History Filters</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Community</label>
+                <input
+                  type="text"
+                  value={communityFilter}
+                  onChange={(e) => setCommunityFilter(e.target.value)}
+                  placeholder="MachineLearning"
+                  className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Topic Keyword</label>
+                <input
+                  type="text"
+                  value={topicFilter}
+                  onChange={(e) => setTopicFilter(e.target.value)}
+                  placeholder="agentic AI, startup funding..."
+                  className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Mode</label>
+                <select
+                  value={modeFilter}
+                  onChange={(e) => setModeFilter(e.target.value)}
+                  className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white"
+                >
+                  <option value="">All</option>
+                  <option value="top_today">Top Today</option>
+                  <option value="hot">Hot</option>
+                  <option value="new">Most Recent</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Day</label>
+                <div className="relative">
+                  <CalendarDays className="absolute left-3 top-2.5 h-4 w-4 text-secondary-400" />
+                  <input
+                    type="date"
+                    value={dayFilter}
+                    onChange={(e) => setDayFilter(e.target.value)}
+                    className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 pl-9 pr-3 py-2 text-sm text-secondary-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Time Window</label>
+                <div className="relative">
+                  <Clock3 className="absolute left-3 top-2.5 h-4 w-4 text-secondary-400" />
+                  <select
+                    value={windowFilter}
+                    onChange={(e) => setWindowFilter(e.target.value)}
+                    disabled={!!dayFilter}
+                    className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 pl-9 pr-3 py-2 text-sm text-secondary-900 dark:text-white disabled:opacity-60"
+                  >
+                    <option value="today">Today</option>
+                    <option value="5">Last 5 hours</option>
+                    <option value="10">Last 10 hours</option>
+                    <option value="20">Last 20 hours</option>
+                    <option value="all">All time</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setCommunityFilter('');
+                  setTopicFilter('');
+                  setModeFilter('');
+                  setDayFilter('');
+                  setWindowFilter('today');
+                }}
+                className="px-3 py-2 rounded-lg text-xs font-semibold bg-secondary-100 dark:bg-gray-700 text-secondary-700 dark:text-gray-200"
+              >
+                Reset Filters
+              </button>
+              <span className="text-xs text-secondary-500 dark:text-gray-400">Tip: Day overrides time window for exact date filtering.</span>
+            </div>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 mb-6 border border-transparent dark:border-gray-700">
@@ -182,21 +312,31 @@ export default function CustomRedditPage({ isDark, toggleDark }) {
           {history.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {history.map((post, idx) => (
-                <article key={`${post.post_url}-${idx}`} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-md border border-transparent dark:border-gray-700 p-5">
+                <article key={`${post.post_url}-${idx}`} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-md border border-transparent dark:border-gray-700 p-5 flex flex-col">
                   <h3 className="font-semibold text-secondary-900 dark:text-white line-clamp-2 mb-2">{post.title}</h3>
                   <p className="text-xs text-secondary-500 dark:text-gray-400 mb-2">
-                    r/{post.subreddit} | by {post.author || 'unknown'} | score {post.score} | comments {post.num_comments}
+                    r/{post.subreddit}
                   </p>
+
                   {post.summary && (
-                    <p className="text-sm text-secondary-600 dark:text-gray-400 line-clamp-4 mb-3">{post.summary}</p>
+                    <p className="text-sm text-secondary-700 dark:text-gray-300 whitespace-pre-wrap mb-3">{post.summary}</p>
                   )}
+
+                  {!post.summary && post.selftext ? (
+                    <p className="text-sm text-secondary-700 dark:text-gray-300 whitespace-pre-wrap mb-3">{post.selftext}</p>
+                  ) : null}
+
+                  {post.published_at ? (
+                    <p className="text-[11px] text-secondary-500 dark:text-gray-400 mb-2">published {formatPublished(post.published_at)}</p>
+                  ) : null}
+
                   <a
                     href={post.post_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 text-sm font-medium"
+                    className="mt-auto inline-flex items-center text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 text-xs font-semibold"
                   >
-                    Open post
+                    Source link
                   </a>
                 </article>
               ))}

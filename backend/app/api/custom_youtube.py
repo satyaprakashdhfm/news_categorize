@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -75,26 +75,91 @@ async def scrape_custom_youtube(request: YouTubeScrapeRequest, db: Session = Dep
 @router.get("/history", response_model=YouTubeHistoryResponse)
 async def get_youtube_history(
     channel: str | None = Query(None),
+    topic: str | None = Query(None),
+    day: str | None = Query(None),
+    hours_back: int | None = Query(None, ge=1, le=240),
     limit: int = Query(200, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     query = db.query(CustomYouTubeVideo)
+    runs_query = db.query(CustomYouTubeVideo.run_id)
+
+    day_value: date | None = None
+    if day:
+        try:
+            day_value = datetime.strptime(day, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="day must be YYYY-MM-DD") from exc
+
     if channel:
-        query = query.filter(CustomYouTubeVideo.channel_input == channel)
+        like = f"%{channel.strip()}%"
+        query = query.filter(
+            or_(
+                CustomYouTubeVideo.channel_input.ilike(like),
+                CustomYouTubeVideo.channel_title.ilike(like),
+            )
+        )
+        runs_query = runs_query.filter(
+            or_(
+                CustomYouTubeVideo.channel_input.ilike(like),
+                CustomYouTubeVideo.channel_title.ilike(like),
+            )
+        )
+
+    if topic:
+        like = f"%{topic.strip()}%"
+        query = query.filter(
+            or_(
+                CustomYouTubeVideo.title.ilike(like),
+                CustomYouTubeVideo.summary.ilike(like),
+                CustomYouTubeVideo.description.ilike(like),
+            )
+        )
+        runs_query = runs_query.filter(
+            or_(
+                CustomYouTubeVideo.title.ilike(like),
+                CustomYouTubeVideo.summary.ilike(like),
+                CustomYouTubeVideo.description.ilike(like),
+            )
+        )
+
+    if day_value:
+        query = query.filter(func.date(CustomYouTubeVideo.scraped_at) == day_value)
+        runs_query = runs_query.filter(func.date(CustomYouTubeVideo.scraped_at) == day_value)
+    elif hours_back:
+        since = datetime.now() - timedelta(hours=int(hours_back))
+        query = query.filter(CustomYouTubeVideo.scraped_at >= since)
+        runs_query = runs_query.filter(CustomYouTubeVideo.scraped_at >= since)
 
     rows = query.order_by(desc(CustomYouTubeVideo.scraped_at)).limit(limit).all()
 
+    total_runs = runs_query.distinct().count()
+    runs_today = (
+        db.query(CustomYouTubeVideo.run_id)
+        .filter(func.date(CustomYouTubeVideo.scraped_at) == datetime.now().date())
+        .distinct()
+        .count()
+    )
+
     videos = [
         {
+            "run_id": row.run_id,
             "video_id": row.video_id,
+            "channel_input": row.channel_input,
             "video_url": row.video_url,
             "title": row.title,
             "description": row.description,
             "summary": row.summary,
             "published_at": row.published_at,
             "channel_title": row.channel_title,
+            "scraped_at": row.scraped_at,
         }
         for row in rows
     ]
 
-    return YouTubeHistoryResponse(total_videos=len(videos), videos=videos)
+    return YouTubeHistoryResponse(
+        total_videos=len(videos),
+        total_runs=total_runs,
+        runs_today=runs_today,
+        videos=videos,
+    )
