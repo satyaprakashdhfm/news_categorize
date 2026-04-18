@@ -258,9 +258,14 @@ export default function CustomRedditPage({ isDark, toggleDark }) {
                     className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 pl-9 pr-3 py-2 text-sm text-secondary-900 dark:text-white disabled:opacity-60"
                   >
                     <option value="today">Today</option>
+                    <option value="2">Last 2 hours</option>
                     <option value="5">Last 5 hours</option>
+                    <option value="6">Last 6 hours</option>
                     <option value="10">Last 10 hours</option>
+                    <option value="12">Last 12 hours</option>
                     <option value="20">Last 20 hours</option>
+                    <option value="24">Last 24 hours</option>
+                    <option value="48">Last 48 hours</option>
                     <option value="all">All time</option>
                   </select>
                 </div>

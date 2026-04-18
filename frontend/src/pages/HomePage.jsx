@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import Header from '@/components/Header';
 import CategoryFilter from '@/components/CategoryFilter';
 import NewsFeed from '@/components/NewsFeed';
-import GlobalMap from '@/components/GlobalMap';
 import { COUNTRIES, CATEGORIES } from '@/utils/helpers';
 import { Play, Square, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { articlesApi } from '@/services/api';
@@ -14,7 +13,6 @@ export default function HomePage({ isDark, toggleDark }) {
   const [selectedTopics, setSelectedTopics] = useState(['policy']);
   const [isRunning, setIsRunning] = useState(false);
   const [scrapeStats, setScrapeStats] = useState(null);
-  const [mapStats, setMapStats] = useState(null);
   const [error, setError] = useState('');
   const pollRef = useRef(null);
 
@@ -40,22 +38,7 @@ export default function HomePage({ isDark, toggleDark }) {
   };
 
   useEffect(() => {
-    const refreshMapStats = async () => {
-      try {
-        const data = await articlesApi.getArticles({ stats: true, limit: 1 });
-        if (data?.stats) {
-          setMapStats(data.stats);
-        }
-      } catch {
-        // best effort
-      }
-    };
-
-    refreshMapStats();
-    const mapStatsTimer = setInterval(refreshMapStats, 20000);
-
     return () => {
-      clearInterval(mapStatsTimer);
       clearInterval(pollRef.current);
     };
   }, []);
@@ -131,7 +114,7 @@ export default function HomePage({ isDark, toggleDark }) {
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-primary-600 dark:text-primary-400 font-semibold">Control Center</p>
               <h1 className="text-3xl md:text-4xl font-bold text-secondary-900 dark:text-white mt-2">Global Research & Coverage</h1>
-              <p className="text-secondary-600 dark:text-gray-300 mt-2">Admin controls are merged here. Start research and explore countries from the world map below.</p>
+              <p className="text-secondary-600 dark:text-gray-300 mt-2">Admin controls are merged here. Start research and use filters below to explore country-specific coverage.</p>
             </div>
 
             {isRunning ? (
@@ -215,17 +198,22 @@ export default function HomePage({ isDark, toggleDark }) {
           ) : null}
         </section>
 
-        <section className="mb-8">
-          <GlobalMap
-            stats={mapStats}
-            selectedCountry={selectedCountry}
-            onSelectCountry={setSelectedCountry}
-          />
-        </section>
-
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border border-transparent dark:border-gray-700 mb-6">
-          <h3 className="text-lg font-semibold text-secondary-900 dark:text-white">Selected Country: {countryName}</h3>
-          <p className="text-sm text-secondary-600 dark:text-gray-300 mt-1">Pick any country from the world map and filter stories below.</p>
+          <h3 className="text-lg font-semibold text-secondary-900 dark:text-white">Country Filter</h3>
+          <p className="text-sm text-secondary-600 dark:text-gray-300 mt-1">Selected Country: {countryName}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {COUNTRIES.map((country) => (
+              <button
+                key={country.code}
+                onClick={() => setSelectedCountry(country.code)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${selectedCountry === country.code
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-secondary-100 dark:bg-gray-700 text-secondary-700 dark:text-gray-300 hover:bg-secondary-200 dark:hover:bg-gray-600'}`}
+              >
+                {country.flag} {country.name}
+              </button>
+            ))}
+          </div>
         </div>
 
         <CategoryFilter
