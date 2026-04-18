@@ -5,8 +5,6 @@ APP_DIR="${APP_DIR:-/home/ubuntu/news_categorize}"
 BRANCH="${BRANCH:-main}"
 SERVICE_NAME="${SERVICE_NAME:-curio-backend}"
 WEB_ROOT="${WEB_ROOT:-/var/www/curio}"
-APPLY_DB_BOOTSTRAP="${APPLY_DB_BOOTSTRAP:-false}"
-DB_NAME="${DB_NAME:-living_world_stories}"
 
 echo "[deploy] App dir: ${APP_DIR}"
 echo "[deploy] Branch: ${BRANCH}"
@@ -37,11 +35,6 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 deactivate
-
-if [[ "${APPLY_DB_BOOTSTRAP}" == "true" ]]; then
-  echo "[deploy] Applying DB bootstrap schema to ${DB_NAME}..."
-  sudo -u postgres psql -v db_name="'${DB_NAME}'" -f "${APP_DIR}/db/bootstrap.sql"
-fi
 
 echo "[deploy] Building frontend..."
 cd "${APP_DIR}/frontend"
