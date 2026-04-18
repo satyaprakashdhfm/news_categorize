@@ -35,15 +35,6 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-echo "[deploy] Ensuring REDDIT_PROXY_URL is set in backend .env..."
-ENV_FILE="${APP_DIR}/backend/.env"
-PROXY_LINE="REDDIT_PROXY_URL=http://zsrszfvn:4idp4bt40aye@31.59.20.176:6754"
-if grep -q "^REDDIT_PROXY_URL=" "${ENV_FILE}" 2>/dev/null; then
-  sed -i "s|^REDDIT_PROXY_URL=.*|${PROXY_LINE}|" "${ENV_FILE}"
-else
-  echo "${PROXY_LINE}" >> "${ENV_FILE}"
-fi
-
 echo "[deploy] Installing Playwright Chromium browser and OS dependencies..."
 python -m playwright install chromium
 sudo "${APP_DIR}/backend/.venv/bin/playwright" install-deps chromium
