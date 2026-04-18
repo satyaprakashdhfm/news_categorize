@@ -146,8 +146,9 @@ class RedditScrapingService:
         url = f"https://www.reddit.com/r/{subreddit}/{path}.json"
         params = {"limit": str(limit), **extra}
 
+        _proxy = settings.REDDIT_PROXY_URL or None
         try:
-            async with session.get(url, params=params, timeout=25) as resp:
+            async with session.get(url, params=params, timeout=25, proxy=_proxy) as resp:
                 if resp.status != 200:
                     logger.warning(f"[REDDIT] {subreddit} fetch failed: {resp.status}")
                     return {"community": subreddit, "mode": mode, "posts": []}
@@ -175,7 +176,7 @@ class RedditScrapingService:
             if permalink:
                 comments_url = f"https://www.reddit.com{permalink}.json"
                 try:
-                    async with session.get(comments_url, params={"limit": "25", "sort": "top"}, timeout=25) as c_resp:
+                    async with session.get(comments_url, params={"limit": "25", "sort": "top"}, timeout=25, proxy=_proxy) as c_resp:
                         if c_resp.status == 200:
                             comment_payload = await c_resp.json()
                             comment_lines = self._collect_comment_lines(comment_payload, max_items=35)

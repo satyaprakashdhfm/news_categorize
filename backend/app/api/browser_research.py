@@ -407,9 +407,10 @@ async def _fetch_reddit_posts_for_community(
     }
     headers = {"User-Agent": "CurioBrowserMain/1.0"}
 
+    _proxy = settings.REDDIT_PROXY_URL or None
     async with aiohttp.ClientSession(headers=headers) as session:
         try:
-            async with session.get(url, params=params, timeout=30) as resp:
+            async with session.get(url, params=params, timeout=30, proxy=_proxy) as resp:
                 if resp.status != 200:
                     return [], _empty_usage()
                 payload = await resp.json()
@@ -758,11 +759,23 @@ async def run_live_browser_stream(request: LiveBrowserRequest, db: Session = Dep
                 browser = await pw.chromium.launch(
                     headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
                 )
-                ctx = await browser.new_context(
+                _ctx_kwargs = dict(
                     viewport={"width": 1280, "height": 760},
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 )
-                page = await ctx.new_page()
+                _reddit_proxy_url = settings.REDDIT_PROXY_URL
+                _reddit_proxy_cfg: dict | None = None
+                if _reddit_proxy_url:
+                    from urllib.parse import urlparse as _urlparse
+                    _p = _urlparse(_reddit_proxy_url)
+                    _reddit_proxy_cfg = {
+                        "server": f"{_p.scheme}://{_p.hostname}:{_p.port}",
+                        "username": _p.username,
+                        "password": _p.password,
+                    }
+                # Reddit phase uses proxy context; YouTube/News uses a clean context
+                _reddit_ctx = await browser.new_context(proxy=_reddit_proxy_cfg, **_ctx_kwargs) if _reddit_proxy_cfg else await browser.new_context(**_ctx_kwargs)
+                page = await _reddit_ctx.new_page()
 
                 async def snap() -> str:
                     png = await page.screenshot(type="jpeg", quality=55, full_page=False)
@@ -869,6 +882,11 @@ async def run_live_browser_stream(request: LiveBrowserRequest, db: Session = Dep
                     yield emit("step", f"  → {len(posts)} posts from r/{sub}")
 
                 yield emit("step", f"Reddit done: {len(reddit_blogs)} posts from {len(subreddits)} subreddits")
+
+                # Switch to a clean context (no proxy) for YouTube + News
+                await _reddit_ctx.close()
+                _clean_ctx = await browser.new_context(**_ctx_kwargs)
+                page = await _clean_ctx.new_page()
 
                 # ── PHASE 2: YouTube search ────────────────────────────────
                 # sp=CAI%3D = sort by upload date newest first (reliable filter)

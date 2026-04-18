@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
     
+    # Reddit proxy (Webshare residential — 1 GB/month free tier)
+    # Estimate: ~3 MB per reddit_scraping call, ~18 MB per browser_research session
+    # Budget: ~300 scraping calls OR ~55 browser sessions per month before limit
+    REDDIT_PROXY_URL: str = ""
+
     # Optional
     SHOW_DB_LOGS: str = "false"
     
