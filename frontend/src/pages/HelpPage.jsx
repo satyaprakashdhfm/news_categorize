@@ -120,6 +120,43 @@ export default function HelpPage({ isDark, toggleDark }) {
   );
 }
 
+function diagnose(result) {
+  if (!result) return null;
+  if (result.ok) return { label: "Working fine", color: "green", hint: null };
+
+  const err = (result.error || "").toLowerCase();
+  const status = result.status;
+
+  if (err.includes("quota") || err.includes("bandwidth") || err.includes("exceeded") || status === 509)
+    return { label: "Quota exceeded", color: "red", hint: "1 GB monthly limit hit — rotate to a new proxy." };
+
+  if (status === 407 || err.includes("407") || err.includes("proxy auth") || err.includes("credentials"))
+    return { label: "Proxy auth failed", color: "red", hint: "Wrong username/password in proxy URL." };
+
+  if (err.includes("cannot connect to host") && err.includes("6754"))
+    return { label: "Proxy unreachable", color: "red", hint: "Proxy server is down or IP/port is wrong." };
+
+  if (err.includes("connect") || err.includes("timeout") || err.includes("timed out"))
+    return { label: "Connection timeout", color: "orange", hint: "Proxy not responding — may be overloaded or dead." };
+
+  if (status === 403)
+    return { label: "Reddit blocked this IP", color: "red", hint: "This proxy IP is blocked by Reddit — not residential enough." };
+
+  if (status === 429)
+    return { label: "Rate limited by Reddit", color: "orange", hint: "Too many requests — wait a minute and retry." };
+
+  if (status === 200 && !result.ok)
+    return { label: "Unexpected response", color: "orange", hint: "Got 200 but no posts — Reddit may have changed its format." };
+
+  return { label: `HTTP ${status || "error"}`, color: "red", hint: result.error };
+}
+
+const diagColors = {
+  green:  "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+  red:    "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  orange: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+};
+
 function ResultCard({ label, result, loading }) {
   if (loading) {
     return (
@@ -130,25 +167,32 @@ function ResultCard({ label, result, loading }) {
   }
   if (!result) return null;
 
+  const diag = diagnose(result);
+
   return (
     <div className={`rounded-xl border p-4 text-sm space-y-2 ${
       result.ok
         ? "border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800"
         : "border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800"
     }`}>
-      <div className="flex items-center gap-2 font-semibold">
-        <span className={result.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`font-semibold ${result.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
           {result.ok ? "✓" : "✗"} {label}
         </span>
+        {diag && (
+          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${diagColors[diag.color]}`}>
+            {diag.label}
+          </span>
+        )}
         {result.elapsed_ms != null && (
-          <span className="text-secondary-400 dark:text-gray-500 font-normal text-xs">{result.elapsed_ms} ms</span>
+          <span className="text-secondary-400 dark:text-gray-500 text-xs ml-auto">{result.elapsed_ms} ms</span>
         )}
       </div>
-      {result.error && (
-        <p className="text-red-600 dark:text-red-400 font-mono text-xs break-all">{result.error}</p>
+      {diag?.hint && !result.ok && (
+        <p className="text-secondary-600 dark:text-gray-400 text-xs">{diag.hint}</p>
       )}
       {result.posts?.length > 0 && (
-        <ul className="space-y-1">
+        <ul className="space-y-1 pt-1">
           {result.posts.map((p, i) => (
             <li key={i} className="text-secondary-700 dark:text-gray-300 text-xs">
               <span className="text-secondary-400 dark:text-gray-500 mr-1">↑{p.score}</span>{p.title}
