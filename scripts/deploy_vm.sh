@@ -46,7 +46,7 @@ fi
 
 echo "[deploy] Installing Playwright Chromium browser and OS dependencies..."
 python -m playwright install chromium
-sudo "${APP_DIR}/backend/.venv/bin/python" -m playwright install-deps chromium
+sudo "${APP_DIR}/backend/.venv/bin/playwright" install-deps chromium
 
 deactivate
 
