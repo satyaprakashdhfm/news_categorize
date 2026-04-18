@@ -34,6 +34,10 @@ fi
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
+
+echo "[deploy] Installing Playwright Chromium browser..."
+python -m playwright install chromium
+
 deactivate
 
 echo "[deploy] Building frontend..."
