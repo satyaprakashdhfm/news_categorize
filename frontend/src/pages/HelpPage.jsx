@@ -1,11 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import Header from "@/components/Header";
 
-const DEFAULT_PROXY = "http://zsrszfvn:4idp4bt40aye@31.59.20.176:6754";
-
 export default function HelpPage({ isDark, toggleDark }) {
-  const [proxyUrl, setProxyUrl] = useState(DEFAULT_PROXY);
+  const [proxyUrl, setProxyUrl] = useState("");
+  const [proxyConfigured, setProxyConfigured] = useState(null); // null=loading, true/false
+
+  useEffect(() => {
+    axios.get("/api/debug/proxy-config").then(({ data }) => {
+      setProxyConfigured(data.configured);
+      if (data.masked_url) setProxyUrl(data.masked_url);
+    }).catch(() => setProxyConfigured(false));
+  }, []);
   const [subreddit, setSubreddit] = useState("technology");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -18,7 +24,7 @@ export default function HelpPage({ isDark, toggleDark }) {
     setRes(null);
     try {
       const { data } = await axios.post("/api/debug/test-reddit", {
-        proxy_url: useProxy ? proxyUrl.trim() : "",
+        use_configured_proxy: useProxy,
         subreddit: subreddit.trim(),
       });
       setRes(data);
@@ -45,20 +51,25 @@ export default function HelpPage({ isDark, toggleDark }) {
 
         {/* Proxy Tester Card */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow border border-secondary-100 dark:border-gray-700 p-6 space-y-5">
-          <h2 className="text-lg font-semibold text-secondary-800 dark:text-white">Reddit Proxy Tester</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-secondary-800 dark:text-white">Reddit Proxy Tester</h2>
+            {proxyConfigured === null && <span className="text-xs text-secondary-400">loading…</span>}
+            {proxyConfigured === true  && <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">Proxy configured</span>}
+            {proxyConfigured === false && <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">No proxy set</span>}
+          </div>
 
           {/* Inputs */}
           <div className="space-y-3">
             <div>
               <label className="block text-sm font-medium text-secondary-700 dark:text-gray-300 mb-1">
-                Proxy URL <span className="text-secondary-400 font-normal">(format: http://user:pass@ip:port)</span>
+                Proxy URL <span className="text-secondary-400 font-normal">(password masked)</span>
               </label>
               <input
                 type="text"
                 value={proxyUrl}
-                onChange={e => setProxyUrl(e.target.value)}
-                placeholder="http://user:pass@ip:port"
-                className="w-full px-3 py-2 rounded-lg border border-secondary-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-secondary-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+                readOnly
+                placeholder="Not configured"
+                className="w-full px-3 py-2 rounded-lg border border-secondary-200 dark:border-gray-600 bg-secondary-50 dark:bg-gray-700/50 text-secondary-700 dark:text-gray-300 text-sm font-mono cursor-default select-all"
               />
             </div>
             <div>
