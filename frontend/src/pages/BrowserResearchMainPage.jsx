@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Header from '@/components/Header';
-import { browserResearchApi } from '@/services/api';
+import { browserResearchApi, feedCardsApi } from '@/services/api';
+import { useAuth } from '@/context/AuthContext';
+import { CATEGORIES, SUBCATEGORY_CODES, SUBCATEGORY_LABELS } from '@/utils/helpers';
 
 const SUMMARY_PREVIEW_CHARS = 240;
 
@@ -29,6 +31,8 @@ function fmtUsd(value) {
 }
 
 export default function BrowserResearchMainPage({ isDark, toggleDark }) {
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [query, setQuery] = useState('US AI startup funding and open source models');
   const [channelsText, setChannelsText] = useState('@OpenAI\n@GoogleDeepMind');
@@ -43,8 +47,20 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
   const [autoRunKey, setAutoRunKey] = useState('');
   const [processingLog, setProcessingLog] = useState([]);
   const [streamPhase, setStreamPhase] = useState('idle'); // 'idle' | 'streaming' | 'done' | 'error'
+  const abortRef = useRef(null);
   const [liveScreenshot, setLiveScreenshot] = useState(null);
   const [currentUrl, setCurrentUrl] = useState('');
+
+  // Save-as-card state
+  const [cardTitle, setCardTitle] = useState('');
+  const [cardDomain, setCardDomain] = useState('');
+  const [cardSubdomain, setCardSubdomain] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [savedCardId, setSavedCardId] = useState(null);
+
+  // Auto-attach result notification
+  const [attachResult, setAttachResult] = useState(null); // { merged, card_id, message }
 
   const blogs = useMemo(() => {
     const items = data?.blogs || [];
@@ -93,15 +109,21 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
 
   useEffect(() => {
     const q = String(searchParams.get('q') || '').trim();
+    const d = String(searchParams.get('domain') || '').trim().toUpperCase();
+    const sub = String(searchParams.get('subdomain') || '').trim().toUpperCase();
     const shouldAutoRun = String(searchParams.get('autorun') || '') === '1';
-    if (!q) {
-      return;
-    }
+    if (!q) return;
 
     setQuery(q);
+    if (d) setCardDomain(d);
+    if (sub) setCardSubdomain(sub);
 
     if (shouldAutoRun && autoRunKey !== q && !loading) {
       setAutoRunKey(q);
+      // Clear autorun from URL so refresh won't re-trigger research
+      const next = new URLSearchParams(searchParams);
+      next.delete('autorun');
+      navigate(`/custom/browser?${next.toString()}`, { replace: true });
       runResearch(q);
     }
   }, [searchParams]);
@@ -113,6 +135,9 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
       return;
     }
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError('');
     setProcessingLog([]);
@@ -120,14 +145,23 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
     setData(null);
     setLiveScreenshot(null);
     setCurrentUrl('');
+    setCardTitle(effectiveQuery);
+    setSaveError('');
+    setSavedCardId(null);
+    setAttachResult(null);
 
     const ts = () => new Date().toLocaleTimeString();
 
     try {
+      const token = localStorage.getItem('curio_token');
       const response = await fetch('/api/browser-research/live-browser-stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ query: effectiveQuery, hint_channels: [] }),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
@@ -164,10 +198,19 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
             setQuery(res?.query || effectiveQuery);
             setExpanded({});
             setStreamPhase('done');
+            setAttachResult(null);
             setHistory((prev) => [
               { run_id: res.run_id, query: res.query, total_blogs: res.total_blogs, generated_at: res.generated_at, llm_usage: res.llm_usage },
               ...prev.filter((x) => x.run_id !== res.run_id),
             ].slice(0, 20));
+            // Auto-attach to global feed (merge or create)
+            feedCardsApi.attachRun({
+              run_id: res.run_id,
+              query: res.query,
+              title: cardTitle || res.query,
+              domain: cardDomain || null,
+              subdomain: cardSubdomain || null,
+            }).then(setAttachResult).catch(() => {});
           } else if (parsed.type === 'error') {
             setError(parsed.payload || 'Research failed');
             setStreamPhase('error');
@@ -175,10 +218,22 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
         }
       }
     } catch (err) {
-      setError(err.message || 'Research run failed');
-      setStreamPhase('error');
+      if (err.name === 'AbortError') {
+        setStreamPhase('idle');
+        setError('');
+      } else {
+        setError(err.message || 'Research run failed');
+        setStreamPhase('error');
+      }
     } finally {
       setLoading(false);
+      abortRef.current = null;
+    }
+  };
+
+  const cancelResearch = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
     }
   };
 
@@ -186,6 +241,30 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
     e.preventDefault();
     await runResearch();
   };
+
+  const saveAsCard = async () => {
+    if (!data?.run_id || saving) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      const card = await feedCardsApi.create({
+        type: 'custom',
+        title: cardTitle || data.query,
+        domain: cardDomain || null,
+        subdomain: cardSubdomain || null,
+        run_id: data.run_id,
+        is_global: true,
+      });
+      await feedCardsApi.pin(card.id);
+      setSavedCardId(card.id);
+    } catch (err) {
+      setSaveError(err?.response?.data?.detail || 'Failed to save card');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const subdominOptions = SUBCATEGORY_CODES[cardDomain] || [];
 
   return (
     <div className="min-h-screen bg-secondary-50 dark:bg-gray-900 transition-colors">
@@ -216,13 +295,24 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-3 rounded-lg font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-60"
-          >
-            {loading ? 'Browsing the web...' : 'Run Live Browser Research'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-3 rounded-lg font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-60"
+            >
+              {loading ? 'Browsing the web...' : 'Run Live Browser Research'}
+            </button>
+            {loading && (
+              <button
+                type="button"
+                onClick={cancelResearch}
+                className="px-5 py-3 rounded-lg font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
 
           <p className="text-xs text-secondary-500 dark:text-gray-400">
             Browser will dynamically discover Reddit communities, search YouTube, and scrape Google News for your query. 2 LLM calls total.
@@ -320,6 +410,7 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
           )}
         </section>
 
+        {(historyLoading || history.length > 0) && (
         <section className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-transparent dark:border-gray-700">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-secondary-900 dark:text-white">Run History</h2>
@@ -332,7 +423,6 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
           </div>
           {historyError ? <p className="text-sm text-red-600 dark:text-red-400 mb-3">{historyError}</p> : null}
           {historyLoading ? <p className="text-sm text-secondary-600 dark:text-gray-300">Loading history...</p> : null}
-          {!historyLoading && !history.length ? <p className="text-sm text-secondary-600 dark:text-gray-300">No runs yet. Run once and it will be saved here.</p> : null}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
             {history.map((h) => (
@@ -353,9 +443,87 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
             ))}
           </div>
         </section>
+        )}
 
         {data ? (
           <section className="space-y-4">
+            {/* ── Global Feed status ───────────────────────────────────── */}
+            {streamPhase === 'done' && (
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border border-emerald-200 dark:border-emerald-800">
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                  <h2 className="text-base font-bold text-secondary-900 dark:text-white">Global Feed</h2>
+                  <button onClick={() => navigate('/')} className="text-xs text-primary-600 dark:text-primary-400 font-semibold hover:underline">View Home Feed →</button>
+                </div>
+
+                {/* Auto-attach result */}
+                {attachResult ? (
+                  <div className={`flex items-start gap-2 px-3 py-2 rounded-lg text-sm font-medium mb-3 ${attachResult.merged ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700'}`}>
+                    <span>{attachResult.merged ? '🔀' : '✓'}</span>
+                    <span>{attachResult.message}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-secondary-400 dark:text-gray-500 mb-3">
+                    <div className="w-3 h-3 border border-secondary-300 border-t-transparent rounded-full animate-spin" />
+                    Attaching to Global Feed...
+                  </div>
+                )}
+
+                {/* Optional: override domain/subcategory for categorization */}
+                <details className="group">
+                  <summary className="cursor-pointer text-xs font-semibold text-secondary-500 dark:text-gray-400 hover:text-secondary-700 dark:hover:text-gray-200 select-none">
+                    Override domain / category (optional)
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="sm:col-span-1">
+                        <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Card Title</label>
+                        <input
+                          type="text"
+                          value={cardTitle}
+                          onChange={(e) => setCardTitle(e.target.value)}
+                          className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Domain</label>
+                        <select
+                          value={cardDomain}
+                          onChange={(e) => { setCardDomain(e.target.value); setCardSubdomain(''); }}
+                          className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white"
+                        >
+                          <option value="">— Select domain —</option>
+                          {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Subcategory</label>
+                        <select
+                          value={cardSubdomain}
+                          onChange={(e) => setCardSubdomain(e.target.value)}
+                          disabled={!cardDomain}
+                          className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white disabled:opacity-50"
+                        >
+                          <option value="">— Select subcategory —</option>
+                          {subdominOptions.map((code) => <option key={code} value={code}>{SUBCATEGORY_LABELS[code]}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    {saveError && <p className="text-xs text-red-600 dark:text-red-400">{saveError}</p>}
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        onClick={saveAsCard}
+                        disabled={saving || !isAuthenticated}
+                        className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white disabled:opacity-60 transition-colors"
+                      >
+                        {saving ? 'Saving...' : savedCardId ? '✓ Saved' : 'Save with this category'}
+                      </button>
+                      {!isAuthenticated && <p className="text-xs text-secondary-500 dark:text-gray-400">Sign in to pin this to your personal feed.</p>}
+                    </div>
+                  </div>
+                </details>
+              </div>
+            )}
+
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-transparent dark:border-gray-700">
               <p className="text-sm text-secondary-700 dark:text-gray-300">Total blogs: <span className="font-semibold">{data.total_blogs}</span></p>
               <p className="text-sm text-secondary-700 dark:text-gray-300 mt-1">Reddit communities: {data.selected_reddit_communities.join(', ')}</p>

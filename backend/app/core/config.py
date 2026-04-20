@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # Budget: ~300 scraping calls OR ~55 browser sessions per month before limit
     REDDIT_PROXY_URL: str = ""
 
+    # Auth
+    JWT_SECRET_KEY: str = "change-me-in-production-use-a-long-random-string"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+
     # Optional
     SHOW_DB_LOGS: str = "false"
     

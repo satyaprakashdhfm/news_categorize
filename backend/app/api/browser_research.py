@@ -8,7 +8,7 @@ from datetime import datetime
 from urllib.parse import quote_plus
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from google import genai
 from sqlalchemy import func
@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.observability import get_langfuse
+from app.core.security import get_optional_user
 from app.models import Article, BrowserResearchItem, BrowserResearchRun, BrowserResearchRunMetric
 from app.schemas.browser_research import (
     BlogItem,
@@ -396,32 +397,52 @@ async def _fetch_reddit_posts_for_community(
 ) -> tuple[list[BlogItem], dict[str, int]]:
     import aiohttp
 
-    url = f"https://www.reddit.com/r/{community}/search.json"
     safe_limit = max(1, min(int(posts_per_community or 1), 50))
-    params = {
-        "q": query,
-        "restrict_sr": "1",
-        "sort": "top",
-        "t": "day",
-        "limit": str(safe_limit),
-    }
-    headers = {"User-Agent": "CurioBrowserMain/1.0"}
-
     _proxy = settings.REDDIT_PROXY_URL or None
-    async with aiohttp.ClientSession(headers=headers) as session:
-        try:
-            async with session.get(url, params=params, timeout=30, proxy=_proxy) as resp:
-                if resp.status != 200:
-                    return [], _empty_usage()
-                payload = await resp.json()
-        except Exception:
-            return [], _empty_usage()
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
-    children = (((payload or {}).get("data") or {}).get("children") or [])
+    # Shorten query to 4 key words — Reddit search chokes on long phrases
+    short_query = " ".join(query.split()[:4])
+
+    posts_data: list[dict] = []
+    async with aiohttp.ClientSession(headers=headers) as session:
+        # ── Try subreddit search (past week) ──────────────────────────
+        try:
+            search_url = f"https://www.reddit.com/r/{community}/search.json"
+            async with session.get(
+                search_url,
+                params={"q": short_query, "restrict_sr": "1", "sort": "top", "t": "week", "limit": str(safe_limit * 2)},
+                timeout=aiohttp.ClientTimeout(total=15),
+                proxy=_proxy,
+            ) as resp:
+                if resp.status == 200:
+                    payload = await resp.json()
+                    posts_data = [n["data"] for n in ((payload.get("data") or {}).get("children") or []) if n.get("data")]
+        except Exception:
+            pass
+
+        # ── Fallback: subreddit hot posts if search empty ──────────────
+        if not posts_data:
+            try:
+                hot_url = f"https://www.reddit.com/r/{community}/hot.json"
+                async with session.get(
+                    hot_url,
+                    params={"limit": str(safe_limit * 3)},
+                    timeout=aiohttp.ClientTimeout(total=15),
+                    proxy=_proxy,
+                ) as resp:
+                    if resp.status == 200:
+                        payload = await resp.json()
+                        posts_data = [n["data"] for n in ((payload.get("data") or {}).get("children") or []) if n.get("data")]
+            except Exception:
+                pass
+
+    if not posts_data:
+        return [], _empty_usage()
+
     usage_totals = _empty_usage()
     posts = []
-    for node in children[:safe_limit]:
-        data = node.get("data") or {}
+    for data in posts_data[:safe_limit]:
         title = (data.get("title") or "Untitled").strip()
         selftext = data.get("selftext") or ""
         summary, usage_counts = await asyncio.to_thread(_summarize_text, title, selftext, client, trace_id)
@@ -737,7 +758,11 @@ async def run_browser_research_stream(request: BrowserResearchRequest, db: Sessi
 
 
 @router.post("/live-browser-stream")
-async def run_live_browser_stream(request: LiveBrowserRequest, db: Session = Depends(get_db)):
+async def run_live_browser_stream(
+    request: LiveBrowserRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_optional_user),
+):
     async def event_generator():
         def emit(t: str, p) -> str:
             return f"data: {json.dumps({'type': t, 'payload': p})}\n\n"
@@ -862,18 +887,14 @@ async def run_live_browser_stream(request: LiveBrowserRequest, db: Session = Dep
                 unique_subs = subreddits
                 yield emit("step", f"Selected subreddits: {', '.join(f'r/{s}' for s in subreddits)}")
 
-                # ── PHASE 1: Reddit — browser shows visual, API fetches data ─
-                # Reddit blocks headless DOM scraping; use proven JSON API instead
+                # ── PHASE 1: Reddit — JSON API via proxy (proven reliable) ──
                 reddit_blogs: list[BlogItem] = []
                 sem = asyncio.Semaphore(5)
                 for sub in subreddits:
-                    # Show browser navigating to subreddit (visual only)
                     browser_url = f"https://www.reddit.com/r/{sub}/"
-                    yield emit("step", f"r/{sub} → fetching top posts via Reddit API")
+                    yield emit("step", f"r/{sub} → fetching posts via Reddit API")
                     for ev in await nav(browser_url, t=25000):
                         yield ev
-
-                    # Fetch actual data via Reddit's reliable JSON search API
                     posts, usage_counts = await _fetch_reddit_posts_for_community(
                         community=sub, query=query, posts_per_community=6, client=client
                     )
@@ -889,9 +910,9 @@ async def run_live_browser_stream(request: LiveBrowserRequest, db: Session = Dep
                 page = await _clean_ctx.new_page()
 
                 # ── PHASE 2: YouTube search ────────────────────────────────
-                # sp=CAI%3D = sort by upload date newest first (reliable filter)
+                # sp=CAI%3D = sort by upload date newest first
                 yt_url = f"https://www.youtube.com/results?search_query={quote_plus(yt_query)}&sp=CAI%3D"
-                yield emit("step", f"YouTube search (newest): '{yt_query}'")
+                yield emit("step", f"YouTube search (newest first): '{yt_query}'")
                 for ev in await nav(yt_url, t=40000):
                     yield ev
                 await asyncio.sleep(4)
@@ -967,7 +988,7 @@ async def run_live_browser_stream(request: LiveBrowserRequest, db: Session = Dep
 
                 news_blogs: list[BlogItem] = []
                 if news_raw:
-                    yield emit("step", f"  → {len(news_raw)} news articles found, summarizing...")
+                    yield emit("step", f"  → {len(news_raw)} Bing news articles found, summarizing...")
                     async def summarize_news(a: dict) -> BlogItem:
                         async with sem:
                             summary, u = await asyncio.to_thread(
@@ -976,7 +997,39 @@ async def run_live_browser_stream(request: LiveBrowserRequest, db: Session = Dep
                             _merge_usage(usage_totals, u)
                             return BlogItem(source="news", title=a["title"], summary=summary, url=a["url"])
                     news_blogs = list(await asyncio.gather(*[summarize_news(a) for a in news_raw]))
-                yield emit("step", f"  → {len(news_blogs)} news articles summarized")
+
+                # ── PHASE 3b: Google News RSS ──────────────────────────────
+                try:
+                    import aiohttp as _aiohttp
+                    import xml.etree.ElementTree as _ET
+                    import re as _re
+                    gnews_rss = f"https://news.google.com/rss/search?q={quote_plus(news_query)}+when:7d&hl=en-US&gl=US&ceid=US:en"
+                    yield emit("step", f"Google News RSS: '{news_query}'")
+                    async with _aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as _sess:
+                        async with _sess.get(gnews_rss, timeout=_aiohttp.ClientTimeout(total=15)) as _resp:
+                            if _resp.status == 200:
+                                rss_text = await _resp.text()
+                                root = _ET.fromstring(rss_text)
+                                gnews_raw = []
+                                for item in root.findall(".//item")[:12]:
+                                    title = (item.findtext("title") or "").strip()
+                                    link = (item.findtext("link") or "").strip()
+                                    desc = _re.sub(r"<[^>]+>", "", item.findtext("description") or "")[:300].strip()
+                                    if title and link and link.startswith("http"):
+                                        gnews_raw.append({"title": title, "url": link, "snippet": desc})
+                                yield emit("step", f"  → {len(gnews_raw)} Google News articles found")
+                                if gnews_raw:
+                                    async def _sum_gnews(a: dict) -> BlogItem:
+                                        async with sem:
+                                            summary, u = await asyncio.to_thread(_summarize_text, a["title"], a.get("snippet", ""), client)
+                                            _merge_usage(usage_totals, u)
+                                            return BlogItem(source="news", title=a["title"], summary=summary, url=a["url"])
+                                    gnews_blogs = list(await asyncio.gather(*[_sum_gnews(a) for a in gnews_raw]))
+                                    news_blogs.extend(gnews_blogs)
+                except Exception as _e:
+                    logger.warning(f"[BROWSER] Google News RSS failed: {_e}")
+
+                yield emit("step", f"  → {len(news_blogs)} total news articles (Bing + Google)")
 
                 await browser.close()
 
@@ -998,6 +1051,7 @@ async def run_live_browser_stream(request: LiveBrowserRequest, db: Session = Dep
                     selected_reddit_communities=json.dumps(unique_subs, ensure_ascii=True),
                     youtube_channels_used=json.dumps(request.hint_channels, ensure_ascii=True),
                     total_blogs=len(blogs),
+                    created_by=current_user.id if current_user else None,
                 )
                 db.add(run_row)
                 db.add(BrowserResearchRunMetric(
@@ -1013,7 +1067,6 @@ async def run_live_browser_stream(request: LiveBrowserRequest, db: Session = Dep
                         score=blog.score, comments=blog.comments,
                     ))
                 db.commit()
-
                 yield emit("step", f"Done! {len(blogs)} results | {usage_schema.calls} LLM calls | ${usage_schema.estimated_cost_usd:.5f}")
                 result = BrowserResearchResponse(
                     run_id=run_id, query=query,
@@ -1036,16 +1089,19 @@ async def run_live_browser_stream(request: LiveBrowserRequest, db: Session = Dep
 
 
 @router.get("/history", response_model=BrowserResearchHistoryResponse)
-def get_browser_research_history(limit: int = 20, db: Session = Depends(get_db)):
+def get_browser_research_history(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_optional_user),
+):
     safe_limit = min(max(limit, 1), 100)
-    rows = (
-        db.query(BrowserResearchRun)
-        .order_by(BrowserResearchRun.generated_at.desc())
-        .limit(safe_limit)
-        .all()
-    )
+    q = db.query(BrowserResearchRun).order_by(BrowserResearchRun.generated_at.desc())
+    if current_user:
+        q = q.filter(BrowserResearchRun.created_by == current_user.id)
+    rows = q.limit(safe_limit).all()
 
-    metric_rows = db.query(BrowserResearchRunMetric).all()
+    run_ids = [r.run_id for r in rows]
+    metric_rows = db.query(BrowserResearchRunMetric).filter(BrowserResearchRunMetric.run_id.in_(run_ids)).all() if run_ids else []
     metric_by_run_id = {m.run_id: m for m in metric_rows}
 
     total_usage = _empty_usage()

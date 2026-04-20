@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore", message="Field name .* shadows an attribute in parent", category=UserWarning)
+
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -8,6 +11,7 @@ load_dotenv(dotenv_path=env_path)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import articles, scraping, custom_agents, custom_youtube, custom_reddit, browser_research, debug
+from app.api import auth, feed_cards
 from app.core.database import Base, engine
 import app.models  # noqa: F401 - ensure models are registered before create_all
 from app.core.config import settings
@@ -43,6 +47,8 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router)
+app.include_router(feed_cards.router)
 app.include_router(articles.router)
 app.include_router(scraping.router)
 app.include_router(custom_agents.router)

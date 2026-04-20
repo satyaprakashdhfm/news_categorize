@@ -15,6 +15,7 @@ class BrowserResearchRun(Base):
     selected_reddit_communities = Column(Text, nullable=False, default="[]")
     youtube_channels_used = Column(Text, nullable=False, default="[]")
     total_blogs = Column(Integer, nullable=False, default=0)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     generated_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     items = relationship(

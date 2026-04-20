@@ -5,6 +5,7 @@ APP_DIR="${APP_DIR:-/home/ubuntu/news_categorize}"
 BRANCH="${BRANCH:-main}"
 SERVICE_NAME="${SERVICE_NAME:-curio-backend}"
 WEB_ROOT="${WEB_ROOT:-/var/www/curio}"
+DB_URL="${DB_URL:-}"
 
 echo "[deploy] App dir: ${APP_DIR}"
 echo "[deploy] Branch: ${BRANCH}"
@@ -40,6 +41,13 @@ python -m playwright install chromium
 sudo "${APP_DIR}/backend/.venv/bin/playwright" install-deps chromium
 
 deactivate
+
+echo "[deploy] Running DB migrations (idempotent)..."
+if [[ -n "${DB_URL}" ]]; then
+  psql "${DB_URL}" -f "${APP_DIR}/db/migration_v2.sql" || echo "[deploy] Migration skipped or already applied."
+else
+  echo "[deploy] DB_URL not set — skipping migrations. Run db/migration_v2.sql manually if needed."
+fi
 
 echo "[deploy] Building frontend..."
 cd "${APP_DIR}/frontend"

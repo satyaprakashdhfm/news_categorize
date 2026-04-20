@@ -1,14 +1,24 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Globe, Home, Sun, Moon, Sparkles, BarChart3, Menu, X, HelpCircle } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Globe, Home, Sun, Moon, Sparkles, BarChart3, Menu, X, HelpCircle, LogIn, LogOut, User } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 export default function Header({ isDark, toggleDark }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout, isAuthenticated } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+
   const isHome = location.pathname === '/';
   const isCustom = location.pathname.startsWith('/custom');
   const isUsage = location.pathname.startsWith('/llm-usage');
   const isHelp = location.pathname.startsWith('/help');
+
+  const handleLogout = () => {
+    logout();
+    setMenuOpen(false);
+    navigate('/');
+  };
 
   const navLink = (to, isActive, icon, label) => (
     <Link
@@ -42,45 +52,76 @@ export default function Header({ isDark, toggleDark }) {
 
           {/* Desktop nav */}
           <div className="hidden md:flex items-center gap-2">
-            <button
-              onClick={toggleDark}
-              aria-label="Toggle dark mode"
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all"
-            >
+            <button onClick={toggleDark} aria-label="Toggle dark mode" className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all">
               {isDark ? <Sun className="h-5 w-5 text-yellow-300" /> : <Moon className="h-5 w-5 text-white" />}
             </button>
             {navLink('/', isHome, <Home className="h-4 w-4" />, 'Home')}
             {navLink('/custom', isCustom, <Sparkles className="h-4 w-4" />, 'Custom')}
             {navLink('/llm-usage', isUsage, <BarChart3 className="h-4 w-4" />, 'LLM Usage')}
             {navLink('/help', isHelp, <HelpCircle className="h-4 w-4" />, 'Help')}
+
+            {isAuthenticated ? (
+              <div className="flex items-center gap-2 ml-1">
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 text-sm text-white">
+                  <User className="h-4 w-4" />
+                  <span className="max-w-[100px] truncate">{user?.name}</span>
+                  {user?.role === 'admin' && (
+                    <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-amber-400 text-amber-900">Admin</span>
+                  )}
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white transition-all"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <Link
+                to="/login"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white text-primary-700 shadow font-semibold text-sm ml-1 hover:bg-primary-50 transition-all"
+              >
+                <LogIn className="h-4 w-4" /> Sign in
+              </Link>
+            )}
           </div>
 
           {/* Mobile: dark toggle + hamburger */}
           <div className="flex items-center gap-2 md:hidden">
-            <button
-              onClick={toggleDark}
-              aria-label="Toggle dark mode"
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all"
-            >
+            <button onClick={toggleDark} aria-label="Toggle dark mode" className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all">
               {isDark ? <Sun className="h-5 w-5 text-yellow-300" /> : <Moon className="h-5 w-5 text-white" />}
             </button>
-            <button
-              onClick={() => setMenuOpen((o) => !o)}
-              aria-label="Toggle menu"
-              className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all"
-            >
+            <button onClick={() => setMenuOpen((o) => !o)} aria-label="Toggle menu" className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all">
               {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
           </div>
         </div>
 
-        {/* Mobile dropdown menu */}
+        {/* Mobile dropdown */}
         {menuOpen && (
           <div className="md:hidden mt-3 flex flex-col gap-2 pb-2">
             {navLink('/', isHome, <Home className="h-4 w-4" />, 'Home')}
             {navLink('/custom', isCustom, <Sparkles className="h-4 w-4" />, 'Custom')}
             {navLink('/llm-usage', isUsage, <BarChart3 className="h-4 w-4" />, 'LLM Usage')}
             {navLink('/help', isHelp, <HelpCircle className="h-4 w-4" />, 'Help')}
+            {isAuthenticated ? (
+              <>
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white/10 text-sm text-white">
+                  <User className="h-4 w-4" />
+                  <span>{user?.name}</span>
+                  {user?.role === 'admin' && (
+                    <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-amber-400 text-amber-900">Admin</span>
+                  )}
+                </div>
+                <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white text-left">
+                  <LogOut className="h-4 w-4" /> Sign out
+                </button>
+              </>
+            ) : (
+              <Link to="/login" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white text-primary-700 font-semibold text-sm">
+                <LogIn className="h-4 w-4" /> Sign in
+              </Link>
+            )}
           </div>
         )}
       </div>

@@ -2,7 +2,7 @@ from app.services.langgraph_processor import get_news_processor_graph
 from app.services.article_extractor_service import article_extractor_service
 from app.core.observability import get_langfuse
 from sqlalchemy.orm import Session
-from app.models import Article, StoryThread, CategoryEnum, CountryEnum
+from app.models import Article, StoryThread, CategoryEnum
 from datetime import datetime
 import logging
 import asyncio
@@ -331,7 +331,7 @@ class NewsScrapingService:
                 source_url=url[:1000],  # Safety: Truncate URL
                 published_at=extracted_published_at
                 or (datetime.fromisoformat(published_at.replace('Z', '+00:00')) if 'T' in published_at else datetime.now()),
-                country=CountryEnum[country],
+                country=country,
                 category=CategoryEnum[category],
                 year=year,
                 sequence_num=sequence_num,

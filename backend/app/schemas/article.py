@@ -1,33 +1,46 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
-
-
-class CountryEnum(str, Enum):
-    USA = "USA"
-    RUSSIA = "RUSSIA"
-    INDIA = "INDIA"
-    CHINA = "CHINA"
-    JAPAN = "JAPAN"
-    UK = "UK"
-    GERMANY = "GERMANY"
-    FRANCE = "FRANCE"
-    ITALY = "ITALY"
-    BRAZIL = "BRAZIL"
-    AUSTRALIA = "AUSTRALIA"
 
 
 class CategoryEnum(str, Enum):
     POL = "POL"
     ECO = "ECO"
     BUS = "BUS"
-    SOC = "SOC"
     TEC = "TEC"
-    ENV = "ENV"
-    HEA = "HEA"
-    SPO = "SPO"
-    SEC = "SEC"
+
+
+# Subcategory codes per domain
+SUBCATEGORY_CODES = {
+    "POL": ["EXE", "LEG", "JUD", "GEO"],
+    "ECO": ["MAC", "MIC", "INV", "MON", "TRD"],
+    "BUS": ["SCA", "MID"],
+    "TEC": ["SAI", "PHY", "BIO", "ROB", "DEF", "SPC", "NMI", "EHW"],
+}
+
+SUBCATEGORY_LABELS = {
+    "EXE": "Executive",
+    "LEG": "Legislative",
+    "JUD": "Judiciary",
+    "GEO": "Geopolitics",
+    "MAC": "Macroeconomics",
+    "MIC": "Microeconomics",
+    "INV": "Investments",
+    "MON": "Monetary Policy",
+    "TRD": "Trade & Global Economy",
+    "SCA": "Startups & Corporate Activity",
+    "MID": "Markets & Industry Dynamics",
+    "SAI": "Software & AI",
+    "PHY": "Science – Physics",
+    "BIO": "Biotechnology",
+    "ROB": "Robotics",
+    "DEF": "Defence & Weapon Technologies",
+    "SPC": "Space",
+    "NMI": "Nano & Material Innovation",
+    "EHW": "Electronics & Hardware",
+    "OTH": "Others",
+}
 
 
 class ArticleBase(BaseModel):
@@ -37,8 +50,9 @@ class ArticleBase(BaseModel):
     image_url: Optional[str] = None
     source_url: str
     published_at: datetime
-    country: CountryEnum
+    country: Optional[str] = None
     category: CategoryEnum
+    subcategory: str = "OTH"
 
 
 class ArticleCreate(ArticleBase):
@@ -61,7 +75,7 @@ class ArticleResponse(ArticleBase):
 class StoryThreadBase(BaseModel):
     title: str
     description: Optional[str] = None
-    country: CountryEnum
+    country: Optional[str] = None
     category: CategoryEnum
 
 
@@ -87,6 +101,11 @@ class CountryCount(BaseModel):
 
 class CategoryCount(BaseModel):
     category: str
+    count: int
+
+
+class SubcategoryCount(BaseModel):
+    subcategory: str
     count: int
 
 
