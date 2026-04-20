@@ -1,12 +1,105 @@
+import json
+import logging
+import re
 import uuid
 from difflib import SequenceMatcher
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 from typing import Optional
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.feed_card import FeedCard, UserFeedCard
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
+
+
+def _ai_same_topic(query_a: str, query_b: str) -> bool:
+    """Ask Gemini whether two research queries are about the same core topic."""
+    try:
+        from google import genai
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        prompt = (
+            "Are these two research queries about the same core topic? "
+            "Answer ONLY with JSON, no other text: {\"same\": true} or {\"same\": false}\n\n"
+            f'Query A: "{query_a}"\n'
+            f'Query B: "{query_b}"'
+        )
+        response = client.models.generate_content(model=settings.GEMINI_MODEL, contents=prompt)
+        text = (response.text or "").strip()
+        match = re.search(r'\{[^}]+\}', text)
+        if match:
+            data = json.loads(match.group())
+            return bool(data.get("same", False))
+    except Exception as exc:
+        logger.warning(f"[AI_SIMILARITY] Gemini call failed: {exc}")
+    return False
+
+
+_DOMAIN_MAP = {
+    "POL": ["EXE", "LEG", "JUD", "GEO"],
+    "ECO": ["MAC", "MIC", "INV", "MON", "TRD"],
+    "BUS": ["SCA", "MID"],
+    "TEC": ["SAI", "PHY", "BIO", "ROB", "DEF", "SPC", "NMI", "EHW"],
+}
+_DOMAIN_DESCRIPTIONS = {
+    "POL": "politics, government, policy, elections, law, courts, geopolitics, diplomacy, international relations",
+    "ECO": "economy, markets, inflation, interest rates, trade, GDP, monetary policy, investments, stocks",
+    "BUS": "business, startups, companies, mergers, acquisitions, venture capital, industry, corporate",
+    "TEC": "technology, AI, software, science, engineering, robotics, space, biotech, hardware, defense tech, weapons",
+}
+_SUBDOMAIN_DESCRIPTIONS = {
+    "EXE": "executive branch, presidency, prime minister, cabinet, government administration",
+    "LEG": "parliament, congress, legislature, laws, bills, voting",
+    "JUD": "courts, judiciary, legal rulings, supreme court, international court",
+    "GEO": "geopolitics, foreign policy, diplomacy, international relations, treaties",
+    "MAC": "macroeconomics, GDP, inflation, recession, national economy",
+    "MIC": "microeconomics, supply/demand, pricing, individual markets",
+    "INV": "investments, stocks, bonds, portfolio, asset management",
+    "MON": "monetary policy, central bank, interest rates, Fed, ECB",
+    "TRD": "trade, imports, exports, tariffs, global commerce, supply chains",
+    "SCA": "startups, venture capital, funding rounds, IPO, corporate activity, M&A",
+    "MID": "market dynamics, industry competition, sector analysis",
+    "SAI": "software, AI, machine learning, data science, programming, open source, LLMs",
+    "PHY": "physics, material science, energy, quantum, nuclear research",
+    "BIO": "biotechnology, genetics, pharmaceuticals, CRISPR, biomedical",
+    "ROB": "robotics, automation, drones, autonomous systems",
+    "DEF": "defence, weapons, military technology, hypersonic, cyber warfare, arms",
+    "SPC": "space, satellites, rockets, NASA, SpaceX, astronomy",
+    "NMI": "nanotechnology, materials innovation, semiconductors",
+    "EHW": "electronics, hardware, chips, consumer tech, IoT",
+}
+
+
+def _ai_classify_domain(query: str) -> tuple[str | None, str | None]:
+    """Use Gemini to classify a free-form research query into a domain+subdomain."""
+    try:
+        from google import genai
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        domain_lines = "\n".join(f'  "{d}": {desc}' for d, desc in _DOMAIN_DESCRIPTIONS.items())
+        subdomain_lines = "\n".join(f'  "{s}": {desc}' for s, desc in _SUBDOMAIN_DESCRIPTIONS.items())
+        prompt = (
+            "Classify this research query into one domain and one subdomain from the lists below.\n"
+            "Answer ONLY with JSON, no other text: {\"domain\": \"XXX\", \"subdomain\": \"YYY\"}\n"
+            "If it truly doesn't fit any domain, use {\"domain\": null, \"subdomain\": null}\n\n"
+            f"Query: \"{query}\"\n\n"
+            f"Domains:\n{domain_lines}\n\n"
+            f"Subdomains:\n{subdomain_lines}"
+        )
+        response = client.models.generate_content(model=settings.GEMINI_MODEL, contents=prompt)
+        text = (response.text or "").strip()
+        match = re.search(r'\{[^}]+\}', text)
+        if match:
+            data = json.loads(match.group())
+            domain = data.get("domain")
+            subdomain = data.get("subdomain")
+            if domain in _DOMAIN_MAP:
+                valid_sub = subdomain if subdomain in _DOMAIN_MAP.get(domain, []) else None
+                return domain, valid_sub
+    except Exception as exc:
+        logger.warning(f"[AI_CLASSIFY] Gemini call failed: {exc}")
+    return None, None
 from app.schemas.feed_card import (
     AttachRunRequest,
     AttachRunResponse,
@@ -39,8 +132,30 @@ def get_global_cards(
         q = q.filter(FeedCard.subdomain == subdomain.upper())
     if card_type:
         q = q.filter(FeedCard.type == card_type)
-    total = q.count()
-    cards = q.order_by(FeedCard.created_at.desc()).offset(offset).limit(limit).all()
+
+    # Build the smart feed: only populated domain cards + custom cards not shadowed by a domain card
+    # Find domain+subdomain pairs that already have a populated domain card
+    covered = db.query(FeedCard.domain, FeedCard.subdomain).filter(
+        FeedCard.type == "domain",
+        FeedCard.run_id.isnot(None),
+        FeedCard.is_global == True,
+    ).all()
+    covered_pairs = {(r.domain, r.subdomain) for r in covered}
+
+    all_candidates = q.order_by(FeedCard.updated_at.desc(), FeedCard.created_at.desc()).all()
+    cards = []
+    for card in all_candidates:
+        if card.type == "domain":
+            if card.run_id is not None:  # only show populated domain cards
+                cards.append(card)
+        else:
+            # Skip custom cards that are shadowed by a populated domain card for same slot
+            if card.domain and card.subdomain and (card.domain, card.subdomain) in covered_pairs:
+                continue
+            cards.append(card)
+
+    total = len(cards)
+    cards = cards[offset: offset + limit]
     return FeedCardListResponse(cards=cards, total=total)
 
 
@@ -206,26 +321,26 @@ def unpin_card(
 
 @router.post("/attach-run", response_model=AttachRunResponse)
 def attach_run(payload: AttachRunRequest, db: Session = Depends(get_db)):
-    # Case 1: admin ran research for a specific domain/subdomain slot
+    # Case 1: domain+subdomain given → always link to the DOMAIN card (never create a parallel custom card)
     if payload.domain and payload.subdomain:
-        existing = (
+        domain_card = (
             db.query(FeedCard)
             .filter(
-                FeedCard.type == "custom",
+                FeedCard.type == "domain",
                 FeedCard.domain == payload.domain.upper(),
                 FeedCard.subdomain == payload.subdomain.upper(),
             )
-            .order_by(FeedCard.created_at.desc())
             .first()
         )
-        if existing:
-            existing.run_id = payload.run_id
+        if domain_card:
+            domain_card.run_id = payload.run_id
             db.commit()
             return AttachRunResponse(
                 merged=True,
-                card_id=existing.id,
-                message=f"Merged into existing card: {existing.title}",
+                card_id=domain_card.id,
+                message=f"Research linked to domain card: {domain_card.title}",
             )
+        # No domain card exists for this slot — create one (shouldn't happen after seeding)
         card = FeedCard(
             id=str(uuid.uuid4()),
             type="custom",
@@ -238,35 +353,43 @@ def attach_run(payload: AttachRunRequest, db: Session = Depends(get_db)):
         db.add(card)
         db.commit()
         db.refresh(card)
-        return AttachRunResponse(merged=False, card_id=card.id, message="Created new card for this domain slot")
+        return AttachRunResponse(merged=False, card_id=card.id, message="Created new card (no domain card found)")
 
-    # Case 2: user research — check query similarity against existing custom card titles
-    query_lower = payload.query.strip().lower()
-    existing_cards = db.query(FeedCard).filter(FeedCard.type == "custom").all()
-    best_match = None
-    best_ratio = 0.0
+    # Case 2: user research — use AI to check if query matches any existing card's topic
+    query_norm = payload.query.strip().lower()
+    existing_cards = db.query(FeedCard).all()  # check domain cards too
+
+    # Pre-filter with fast lexical score to avoid unnecessary AI calls
+    candidates = []
     for card in existing_cards:
-        ratio = SequenceMatcher(None, query_lower, (card.title or "").strip().lower()).ratio()
-        if ratio > best_ratio:
-            best_ratio = ratio
-            best_match = card
+        ratio = SequenceMatcher(None, query_norm, (card.title or "").strip().lower()).ratio()
+        if ratio >= 0.35:
+            candidates.append((ratio, card))
+    candidates.sort(key=lambda x: x[0], reverse=True)
 
-    if best_match and best_ratio >= 0.95:
-        best_match.run_id = payload.run_id
-        db.commit()
-        return AttachRunResponse(
-            merged=True,
-            card_id=best_match.id,
-            message=f"Merged into existing card: '{best_match.title}' ({best_ratio:.0%} match)",
-        )
+    for _, candidate in candidates[:5]:
+        if _ai_same_topic(payload.query, candidate.title or ""):
+            candidate.run_id = payload.run_id
+            db.commit()
+            return AttachRunResponse(
+                merged=True,
+                card_id=candidate.id,
+                message=f"Merged into existing card: '{candidate.title}' (AI confirmed same topic)",
+            )
 
-    # Case 3: no match → new card
+    # Case 3: no match → new card; auto-classify domain/subdomain via AI
+    auto_domain, auto_subdomain = None, None
+    if not payload.domain:
+        auto_domain, auto_subdomain = _ai_classify_domain(payload.query)
+        if auto_domain:
+            logger.info(f"[AI_CLASSIFY] '{payload.query[:60]}' → {auto_domain}·{auto_subdomain}")
+
     card = FeedCard(
         id=str(uuid.uuid4()),
         type="custom",
         title=payload.title or payload.query,
-        domain=payload.domain.upper() if payload.domain else None,
-        subdomain=payload.subdomain.upper() if payload.subdomain else None,
+        domain=(payload.domain.upper() if payload.domain else auto_domain),
+        subdomain=(payload.subdomain.upper() if payload.subdomain else auto_subdomain),
         run_id=payload.run_id,
         is_global=True,
     )

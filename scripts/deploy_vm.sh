@@ -45,6 +45,7 @@ deactivate
 echo "[deploy] Running DB migrations (idempotent)..."
 if [[ -n "${DB_URL}" ]]; then
   psql "${DB_URL}" -f "${APP_DIR}/db/migration_v2.sql" || echo "[deploy] Migration skipped or already applied."
+  psql "${DB_URL}" -f "${APP_DIR}/db/fix_orphan_cards.sql" || echo "[deploy] Orphan-card fix skipped or already applied."
 else
   echo "[deploy] DB_URL not set — skipping migrations. Run db/migration_v2.sql manually if needed."
 fi

@@ -3,48 +3,90 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Header from '@/components/Header';
 import NewsCard from '@/components/NewsCard';
 import { articlesApi, browserResearchApi, feedCardsApi } from '@/services/api';
-import { CATEGORIES, COUNTRIES, DOMAIN_COLORS, SUBCATEGORY_LABELS } from '@/utils/helpers';
+import { CATEGORIES, COUNTRIES, DOMAIN_COLORS, SUBCATEGORY_LABELS, formatTimeAgo } from '@/utils/helpers';
 import { cn } from '@/utils/helpers';
-import { ArrowLeft, ExternalLink, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ExternalLink, MessageSquare, RefreshCw, ThumbsUp } from 'lucide-react';
 
-const SOURCE_BADGE = {
-  reddit: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
-  youtube: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-  news: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+const SOURCE_CONFIG = {
+  reddit:  { label: 'Reddit',  cls: 'bg-orange-500',  text: 'text-white' },
+  youtube: { label: 'YouTube', cls: 'bg-red-600',     text: 'text-white' },
+  news:    { label: 'News',    cls: 'bg-blue-600',    text: 'text-white' },
 };
 
 function BrowserItem({ item }) {
   const [open, setOpen] = useState(false);
+  const src = SOURCE_CONFIG[item.source] || { label: item.source, cls: 'bg-gray-500', text: 'text-white' };
+
   return (
-    <div className="border-b border-secondary-100 dark:border-gray-700 last:border-0 py-3 px-4">
-      <div className="flex items-start gap-2">
-        <span className={cn('mt-0.5 px-1.5 py-0.5 rounded text-xs font-bold uppercase flex-shrink-0', SOURCE_BADGE[item.source] || 'bg-gray-100 text-gray-600')}>
-          {item.source}
-        </span>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-secondary-900 dark:text-white leading-snug">{item.title}</p>
+    <article className="group px-5 py-4 border-b border-gray-100 dark:border-gray-700/60 last:border-0 hover:bg-gray-50/60 dark:hover:bg-gray-700/20 transition-colors">
+      <div className="flex items-start gap-3">
+        {/* Source dot */}
+        <div className={cn('mt-1 w-2 h-2 rounded-full flex-shrink-0', src.cls)} />
+
+        <div className="flex-1 min-w-0 space-y-1.5">
+          {/* Meta row */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide', src.cls, src.text)}>
+              {src.label}
+            </span>
+            {item.community && (
+              <span className="text-[11px] text-orange-600 dark:text-orange-400 font-semibold">r/{item.community}</span>
+            )}
+            {item.channel && (
+              <span className="text-[11px] text-red-600 dark:text-red-400 font-semibold">{item.channel}</span>
+            )}
+            {item.published_at && (
+              <span className="text-[11px] text-gray-400 dark:text-gray-500">{formatTimeAgo(item.published_at)}</span>
+            )}
+          </div>
+
+          {/* Title */}
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white leading-snug group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+            {item.title}
+          </h3>
+
+          {/* Summary */}
           {item.summary && (
-            <p className={cn('mt-1 text-xs text-secondary-600 dark:text-gray-400', open ? '' : 'line-clamp-3')}>
+            <p className={cn('text-xs text-gray-500 dark:text-gray-400 leading-relaxed', open ? '' : 'line-clamp-2')}>
               {item.summary}
             </p>
           )}
-          <div className="mt-1.5 flex items-center gap-3 flex-wrap">
-            {item.community && <span className="text-xs text-secondary-400 dark:text-gray-500">r/{item.community}</span>}
-            {item.channel && <span className="text-xs text-secondary-400 dark:text-gray-500">{item.channel}</span>}
+
+          {/* Action row */}
+          <div className="flex items-center gap-4 pt-0.5">
+            {item.score != null && item.score > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
+                <ThumbsUp className="h-3 w-3" /> {item.score.toLocaleString()}
+              </span>
+            )}
+            {item.comments != null && item.comments > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
+                <MessageSquare className="h-3 w-3" /> {item.comments.toLocaleString()}
+              </span>
+            )}
+            {item.summary && item.summary.length > 120 && (
+              <button
+                onClick={() => setOpen((o) => !o)}
+                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+              >
+                {open ? 'Show less' : 'Read more'}
+              </button>
+            )}
             {item.url && (
-              <a href={item.url} target="_blank" rel="noreferrer" className="text-xs text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-0.5">
+              <a
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
                 Open <ExternalLink className="h-3 w-3" />
               </a>
-            )}
-            {item.summary && item.summary.length > 150 && (
-              <button onClick={() => setOpen((o) => !o)} className="text-xs text-secondary-400 hover:text-secondary-600 dark:hover:text-gray-300">
-                {open ? 'less' : 'more'}
-              </button>
             )}
           </div>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -58,7 +100,7 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Filters
+  const [itemType, setItemType] = useState('article'); // 'article' | 'browser'
   const [country, setCountry] = useState('');
   const [hoursBack, setHoursBack] = useState('24');
   const [sourceFilter, setSourceFilter] = useState('all');
@@ -76,18 +118,33 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
     setError('');
     try {
       if (card.type === 'domain') {
-        const params = { limit: 50 };
+        // Try articles first
+        const params = { limit: 60 };
         if (card.domain) params.categories = card.domain;
         if (card.subdomain && card.subdomain !== 'OTH') params.subcategory = card.subdomain;
         if (hoursBack) params.hours_back = parseInt(hoursBack);
         if (country) params.country = country;
         const res = await articlesApi.getArticles(params);
-        setItems(res.articles || []);
+        const articles = res.articles || [];
+        if (articles.length > 0) {
+          setItems(articles);
+          setItemType('article');
+        } else if (card.run_id) {
+          // Fall back to browser research data linked to this domain card
+          const runData = await browserResearchApi.getRun(card.run_id);
+          setItems(runData.blogs || []);
+          setItemType('browser');
+        } else {
+          setItems([]);
+          setItemType('article');
+        }
       } else if (card.run_id) {
         const res = await browserResearchApi.getRun(card.run_id);
         setItems(res.blogs || []);
+        setItemType('browser');
       } else {
         setItems([]);
+        setItemType('browser');
       }
     } catch {
       setError('Failed to load items.');
@@ -97,9 +154,7 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
     }
   }, [card, hoursBack, country]);
 
-  useEffect(() => {
-    if (card) loadItems();
-  }, [card, loadItems]);
+  useEffect(() => { if (card) loadItems(); }, [card, loadItems]);
 
   const filteredItems = card?.type === 'custom' && sourceFilter !== 'all'
     ? items.filter((i) => i.source === sourceFilter)
@@ -109,9 +164,20 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
   const category = CATEGORIES.find((c) => c.id === card?.domain);
   const subcategoryLabel = SUBCATEGORY_LABELS[card?.subdomain] || card?.subdomain;
 
+  const dnaCode = card?.domain
+    ? card?.subdomain && card?.subdomain !== 'OTH'
+      ? `${card.domain}·${card.subdomain}`
+      : card?.domain
+    : null;
+
+  const sourceCounts = items.reduce((acc, i) => {
+    acc[i.source] = (acc[i.source] || 0) + 1;
+    return acc;
+  }, {});
+
   if (cardLoading) {
     return (
-      <div className="min-h-screen bg-secondary-50 dark:bg-gray-900">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
         <Header isDark={isDark} toggleDark={toggleDark} />
         <div className="flex justify-center py-24">
           <div className="w-8 h-8 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
@@ -121,87 +187,126 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
   }
 
   return (
-    <div className="min-h-screen bg-secondary-50 dark:bg-gray-900 transition-colors">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
       <Header isDark={isDark} toggleDark={toggleDark} />
-      <main className="container mx-auto px-4 py-6 max-w-4xl space-y-4">
 
-        {/* Back + title */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-1.5 rounded-lg hover:bg-secondary-100 dark:hover:bg-gray-700 transition-colors"
-          >
-            <ArrowLeft className="h-5 w-5 text-secondary-500 dark:text-gray-400" />
-          </button>
-          {card && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-secondary-900 dark:text-white">{card.title}</h1>
-              {card.domain && (
-                <span className={cn('px-2 py-0.5 rounded-full text-xs font-semibold', colors.text, colors.bg)}>
-                  {category?.icon} {card.domain}
-                </span>
-              )}
-              {card.subdomain && card.subdomain !== 'OTH' && (
-                <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', colors.text, colors.bg)}>
-                  {subcategoryLabel}
-                </span>
+      <main className="container mx-auto px-4 py-6 max-w-3xl space-y-5">
+
+        {/* Back nav */}
+        <button
+          onClick={() => navigate(-1)}
+          className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back
+        </button>
+
+        {/* Card hero */}
+        {card && (
+          <div className={cn('bg-white dark:bg-gray-800 rounded-2xl border overflow-hidden shadow-sm', colors.border)}>
+            <div className={cn('h-1 w-full', {
+              POL: 'bg-blue-500', ECO: 'bg-emerald-500',
+              BUS: 'bg-violet-500', TEC: 'bg-orange-500',
+            }[card.domain] || 'bg-gray-400')} />
+            <div className="p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  {dnaCode && (
+                    <span className={cn('inline-block font-mono text-xs font-bold px-2 py-0.5 rounded mb-2', colors.bg, colors.text)}>
+                      {dnaCode}
+                    </span>
+                  )}
+                  <h1 className="text-lg font-bold text-gray-900 dark:text-white leading-snug">
+                    {card.title}
+                  </h1>
+                  {card.description && (
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{card.description}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                  {category && (
+                    <span className={cn('text-xs font-semibold px-2.5 py-1 rounded-full', colors.bg, colors.text)}>
+                      {category.icon} {category.name}
+                    </span>
+                  )}
+                  {subcategoryLabel && card.subdomain !== 'OTH' && (
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
+                      {subcategoryLabel}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {card.created_at && (
+                <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
+                  Last updated {formatTimeAgo(card.created_at)}
+                </p>
               )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Filters */}
         {card && (
-          <div className="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 rounded-xl border border-secondary-100 dark:border-gray-700 px-4 py-3 shadow-sm">
-            {card.type === 'domain' ? (
-              <>
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 px-4 py-3 shadow-sm space-y-2">
+            {card.type === 'domain' && itemType === 'article' ? (
+              <div className="flex items-center gap-2 flex-wrap">
                 <select
                   value={country}
                   onChange={(e) => setCountry(e.target.value)}
-                  className="rounded-lg border border-secondary-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-secondary-800 dark:text-white"
+                  className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-800 dark:text-white"
                 >
                   <option value="">All countries</option>
                   {COUNTRIES.map((c) => (
                     <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
                   ))}
                 </select>
-                <select
-                  value={hoursBack}
-                  onChange={(e) => setHoursBack(e.target.value)}
-                  className="rounded-lg border border-secondary-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-secondary-800 dark:text-white"
-                >
-                  <option value="6">6h</option>
-                  <option value="24">24h</option>
-                  <option value="48">48h</option>
-                  <option value="72">72h</option>
-                  <option value="168">7d</option>
-                </select>
-              </>
+                <div className="flex gap-1 flex-wrap">
+                  {[['6','6h'],['24','24h'],['48','48h'],['72','72h'],['168','7d']].map(([v, l]) => (
+                    <button
+                      key={v}
+                      onClick={() => setHoursBack(v)}
+                      className={cn(
+                        'px-2.5 py-1 rounded-full text-xs font-semibold transition-all',
+                        hoursBack === v
+                          ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600',
+                      )}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : (
-              <div className="flex gap-1 flex-wrap">
-                {['all', 'reddit', 'youtube', 'news'].map((src) => (
-                  <button
-                    key={src}
-                    onClick={() => setSourceFilter(src)}
-                    className={cn(
-                      'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors capitalize',
-                      sourceFilter === src
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-secondary-100 dark:bg-gray-700 text-secondary-600 dark:text-gray-300 hover:bg-secondary-200 dark:hover:bg-gray-600',
-                    )}
-                  >
-                    {src}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2 flex-wrap">
+                {['all', 'reddit', 'youtube', 'news'].map((src) => {
+                  const count = src === 'all' ? items.length : (sourceCounts[src] || 0);
+                  return (
+                    <button
+                      key={src}
+                      onClick={() => setSourceFilter(src)}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all capitalize',
+                        sourceFilter === src
+                          ? 'bg-primary-600 text-white shadow-sm'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600',
+                      )}
+                    >
+                      {src}
+                      {count > 0 && (
+                        <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-bold',
+                          sourceFilter === src ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400')}>
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
-            <div className="ml-auto flex items-center gap-2">
-              <span className="text-xs text-secondary-500 dark:text-gray-400">{filteredItems.length} items</span>
-              <button
-                onClick={loadItems}
-                className="p-1.5 rounded-lg hover:bg-secondary-100 dark:hover:bg-gray-700 transition-colors"
-              >
-                <RefreshCw className={cn('h-4 w-4 text-secondary-400', loading && 'animate-spin')} />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-400 dark:text-gray-500">{filteredItems.length} items</span>
+              <button onClick={loadItems} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                <RefreshCw className={cn('h-3.5 w-3.5 text-gray-400', loading && 'animate-spin')} />
               </button>
             </div>
           </div>
@@ -215,17 +320,17 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
             <div className="w-8 h-8 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : filteredItems.length === 0 ? (
-          <div className="text-center py-16 text-secondary-500 dark:text-gray-400 text-sm">
-            No items found for the selected filters.
+          <div className="text-center py-16 text-gray-400 dark:text-gray-500 text-sm">
+            No items for the selected filters.
           </div>
-        ) : card?.type === 'domain' ? (
+        ) : itemType === 'article' ? (
           <div className="space-y-3">
             {filteredItems.map((article) => (
               <NewsCard key={article.id} article={article} />
             ))}
           </div>
         ) : (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-secondary-100 dark:border-gray-700 shadow-sm overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
             {filteredItems.map((item, idx) => (
               <BrowserItem key={`${item.url}-${idx}`} item={item} />
             ))}
