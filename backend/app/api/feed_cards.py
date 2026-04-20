@@ -159,6 +159,44 @@ def get_global_cards(
     return FeedCardListResponse(cards=cards, total=total)
 
 
+# ── Trending cards (public, grouped by domain/subdomain) ───────────────────
+
+@router.get("/trending", response_model=dict)
+def get_trending_cards(
+    limit_per_subdomain: int = Query(3, ge=1, le=10),
+    db: Session = Depends(get_db),
+):
+    cards = db.query(FeedCard).filter(FeedCard.is_global == True).all()
+    # Sort all by pinned_count desc
+    cards_sorted = sorted(cards, key=lambda c: len(c.pinned_by), reverse=True)
+
+    # Group by domain → subdomain
+    grouped: dict[str, dict[str, list]] = {}
+    for card in cards_sorted:
+        domain = card.domain or "OTH"
+        subdomain = card.subdomain or "OTH"
+        if domain not in grouped:
+            grouped[domain] = {}
+        if subdomain not in grouped[domain]:
+            grouped[domain][subdomain] = []
+        if len(grouped[domain][subdomain]) < limit_per_subdomain:
+            grouped[domain][subdomain].append({
+                "id": card.id,
+                "type": card.type,
+                "title": card.title,
+                "domain": card.domain,
+                "subdomain": card.subdomain,
+                "description": card.description,
+                "run_id": card.run_id,
+                "is_global": card.is_global,
+                "created_at": card.created_at.isoformat(),
+                "updated_at": card.updated_at.isoformat(),
+                "pinned_count": len(card.pinned_by),
+            })
+
+    return {"trending": grouped}
+
+
 # ── Single card (public) ────────────────────────────────────────────────────
 
 @router.get("/{card_id}", response_model=FeedCardResponse)
@@ -291,6 +329,7 @@ def pin_card(
         position=payload.position,
     )
     db.add(pin)
+    card.pinned_count = (card.pinned_count or 0) + 1
     db.commit()
     db.refresh(pin)
     return pin
@@ -308,7 +347,10 @@ def unpin_card(
     ).first()
     if not pin:
         raise HTTPException(status_code=404, detail="Card not in your feed")
+    card = db.query(FeedCard).filter(FeedCard.id == card_id).first()
     db.delete(pin)
+    if card:
+        card.pinned_count = max(0, (card.pinned_count or 0) - 1)
     db.commit()
 
 

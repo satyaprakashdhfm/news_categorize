@@ -31,6 +31,7 @@ class FeedCardResponse(BaseModel):
     is_global: bool
     created_at: datetime
     updated_at: datetime
+    pinned_count: int = 0
 
     class Config:
         from_attributes = True

@@ -29,6 +29,7 @@ export const feedCardsApi = {
   unpin: (cardId) => api.delete(`/feed-cards/my/feed/${cardId}`),
   setGlobal: (cardId, isGlobal) => api.patch(`/feed-cards/${cardId}/global`, null, { params: { is_global: isGlobal } }).then((r) => r.data),
   attachRun: (data) => api.post('/feed-cards/attach-run', data).then((r) => r.data),
+  getTrending: (params = {}) => api.get('/feed-cards/trending', { params }).then((r) => r.data),
 };
 
 // ── Articles ─────────────────────────────────────────────────────────────────

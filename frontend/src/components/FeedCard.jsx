@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowUpRight, Cpu, Globe2, Pin, PinOff } from 'lucide-react';
+import { ArrowUpRight, Cpu, Globe2, Users } from 'lucide-react';
 import { feedCardsApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORIES, DOMAIN_COLORS, SUBCATEGORY_LABELS, formatTimeAgo } from '@/utils/helpers';
@@ -34,7 +34,6 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin }) {
 
   const colors = DOMAIN_COLORS[card.domain] || DOMAIN_COLORS.OTH;
   const category = CATEGORIES.find((c) => c.id === card.domain);
-  const subcategoryLabel = SUBCATEGORY_LABELS[card.subdomain] || card.subdomain;
 
   const dnaCode = card.domain
     ? card.subdomain && card.subdomain !== 'OTH'
@@ -101,7 +100,6 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin }) {
           </p>
         )}
 
-        {/* Spacer */}
         <div className="flex-1" />
 
         {/* Footer */}
@@ -118,22 +116,36 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin }) {
                 <span>{formatTimeAgo(card.created_at)}</span>
               </>
             )}
+            {card.pinned_count > 0 && (
+              <>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="inline-flex items-center gap-0.5">
+                  <Users className="h-3 w-3" />
+                  {card.pinned_count}
+                </span>
+              </>
+            )}
           </div>
-          <div className="flex items-center gap-1">
+
+          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             {isAuthenticated && (
-              <button
-                onClick={handlePin}
-                disabled={pinning}
-                title={isPinned ? 'Remove from My Feed' : 'Save to My Feed'}
-                className={cn(
-                  'p-1.5 rounded-lg transition-all',
-                  isPinned
-                    ? 'text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20'
-                    : 'text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700',
-                )}
-              >
-                {isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
-              </button>
+              isPinned ? (
+                <button
+                  onClick={handlePin}
+                  disabled={pinning}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-700 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-700 transition-all"
+                >
+                  {pinning ? '...' : '✓ Saved'}
+                </button>
+              ) : (
+                <button
+                  onClick={handlePin}
+                  disabled={pinning}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-600 dark:hover:text-primary-400 hover:border-primary-300 dark:hover:border-primary-600 transition-all"
+                >
+                  {pinning ? '...' : '+ Add to My Feed'}
+                </button>
+              )
             )}
             <span className="p-1.5 rounded-lg text-gray-300 dark:text-gray-600 group-hover:text-primary-500 group-hover:bg-primary-50 dark:group-hover:bg-primary-900/20 transition-all">
               <ArrowUpRight className="h-3.5 w-3.5" />

@@ -7,6 +7,44 @@ import { CATEGORIES, SUBCATEGORY_CODES, SUBCATEGORY_LABELS } from '@/utils/helpe
 
 const SUMMARY_PREVIEW_CHARS = 240;
 
+function AddToFeedBtn({ cardId }) {
+  const [pinned, setPinned] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const handleAdd = async (e) => {
+    e.stopPropagation();
+    if (busy || pinned) return;
+    setBusy(true);
+    try {
+      await feedCardsApi.pin(cardId);
+      setPinned(true);
+    } catch {
+      // 409 = already pinned
+      setPinned(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (pinned) {
+    return (
+      <span className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/60 dark:bg-gray-800/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-600">
+        ✓ Saved
+      </span>
+    );
+  }
+
+  return (
+    <button
+      onClick={handleAdd}
+      disabled={busy}
+      className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-700 dark:hover:text-primary-300 hover:border-primary-300 dark:hover:border-primary-600 transition-all"
+    >
+      {busy ? '…' : '+ Add to My Feed'}
+    </button>
+  );
+}
+
 function compact(text, n = SUMMARY_PREVIEW_CHARS) {
   const value = String(text || '').trim();
   if (value.length <= n) {
@@ -410,40 +448,11 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
           )}
         </section>
 
-        {(historyLoading || history.length > 0) && (
-        <section className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-transparent dark:border-gray-700">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-secondary-900 dark:text-white">Run History</h2>
-            <button
-              onClick={loadHistory}
-              className="px-3 py-2 rounded-lg text-sm font-semibold bg-secondary-100 dark:bg-gray-700 text-secondary-700 dark:text-gray-200"
-            >
-              Refresh
-            </button>
-          </div>
-          {historyError ? <p className="text-sm text-red-600 dark:text-red-400 mb-3">{historyError}</p> : null}
-          {historyLoading ? <p className="text-sm text-secondary-600 dark:text-gray-300">Loading history...</p> : null}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {history.map((h) => (
-              <button
-                key={h.run_id}
-                onClick={() => openRun(h.run_id)}
-                className="text-left rounded-lg border border-secondary-200 dark:border-gray-700 p-4 hover:border-primary-400 dark:hover:border-primary-500"
-              >
-                <p className="text-xs text-secondary-500 dark:text-gray-400">{new Date(h.generated_at).toLocaleString()}</p>
-                <p className="mt-1 text-sm font-semibold text-secondary-900 dark:text-white">{h.query}</p>
-                <p className="mt-2 text-xs text-secondary-600 dark:text-gray-300">{h.total_blogs} items</p>
-                {h.llm_usage ? (
-                  <p className="mt-1 text-xs text-secondary-600 dark:text-gray-300">
-                    {fmtInt(h.llm_usage.total_tokens)} tokens • {fmtUsd(h.llm_usage.estimated_cost_usd)}
-                  </p>
-                ) : null}
-              </button>
-            ))}
-          </div>
-        </section>
-        )}
+        {/* History moved to Profile page */}
+        <div className="flex items-center justify-between px-1">
+          <span className="text-xs text-secondary-400 dark:text-gray-500">Research history is available on your Profile page.</span>
+          <button onClick={() => navigate('/profile')} className="text-xs text-primary-600 dark:text-primary-400 font-semibold hover:underline">View history →</button>
+        </div>
 
         {data ? (
           <section className="space-y-4">
@@ -457,9 +466,14 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
 
                 {/* Auto-attach result */}
                 {attachResult ? (
-                  <div className={`flex items-start gap-2 px-3 py-2 rounded-lg text-sm font-medium mb-3 ${attachResult.merged ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700'}`}>
-                    <span>{attachResult.merged ? '🔀' : '✓'}</span>
-                    <span>{attachResult.message}</span>
+                  <div className={`flex items-start justify-between gap-3 px-3 py-2 rounded-lg text-sm font-medium mb-3 ${attachResult.merged ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700'}`}>
+                    <div className="flex items-start gap-2 flex-1">
+                      <span>{attachResult.merged ? '🔀' : '✓'}</span>
+                      <span>{attachResult.message}</span>
+                    </div>
+                    {isAuthenticated && attachResult.card_id && (
+                      <AddToFeedBtn cardId={attachResult.card_id} />
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-xs text-secondary-400 dark:text-gray-500 mb-3">

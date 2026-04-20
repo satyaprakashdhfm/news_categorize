@@ -62,13 +62,16 @@ export default function Header({ isDark, toggleDark }) {
 
             {isAuthenticated ? (
               <div className="flex items-center gap-2 ml-1">
-                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 text-sm text-white">
+                <Link
+                  to="/profile"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white transition-all"
+                >
                   <User className="h-4 w-4" />
                   <span className="max-w-[100px] truncate">{user?.name}</span>
                   {user?.role === 'admin' && (
                     <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-amber-400 text-amber-900">Admin</span>
                   )}
-                </div>
+                </Link>
                 <button
                   onClick={handleLogout}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white transition-all"
@@ -106,13 +109,13 @@ export default function Header({ isDark, toggleDark }) {
             {navLink('/help', isHelp, <HelpCircle className="h-4 w-4" />, 'Help')}
             {isAuthenticated ? (
               <>
-                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white/10 text-sm text-white">
+                <Link to="/profile" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white transition-all">
                   <User className="h-4 w-4" />
                   <span>{user?.name}</span>
                   {user?.role === 'admin' && (
                     <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-amber-400 text-amber-900">Admin</span>
                   )}
-                </div>
+                </Link>
                 <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white text-left">
                   <LogOut className="h-4 w-4" /> Sign out
                 </button>
