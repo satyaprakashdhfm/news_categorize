@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Globe } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 export default function LoginPage({ isDark, toggleDark }) {
@@ -26,48 +25,53 @@ export default function LoginPage({ isDark, toggleDark }) {
   };
 
   return (
-    <div className="min-h-screen bg-secondary-50 dark:bg-gray-900 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <Globe className="h-12 w-12 text-primary-600 dark:text-primary-400 mx-auto mb-3" />
-          <h1 className="text-2xl font-bold text-secondary-900 dark:text-white">Welcome to Curio</h1>
-          <p className="text-sm text-secondary-600 dark:text-gray-400 mt-1">Sign in to your account</p>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-0)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px' }}>
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{ color: 'var(--accent)', marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+            <svg viewBox="0 0 32 32" width="48" height="48">
+              <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" strokeWidth="1.2"/>
+              <path d="M2.5 16 H29.5 M16 2.5 V29.5 M5 8 Q16 14 27 8 M5 24 Q16 18 27 24" fill="none" stroke="currentColor" strokeWidth="1.2"/>
+              <circle cx="16" cy="16" r="2.2" fill="currentColor"/>
+            </svg>
+          </div>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>Welcome back</h1>
+          <p className="meta" style={{ marginTop: 6 }}>Sign in to your Curio account</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-secondary-100 dark:border-gray-700 space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="panel" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="field">
+            <label className="field__label">Email</label>
+            <div className="field__input">
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Password</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+          <div className="field">
+            <label className="field__label">Password</label>
+            <div className="field__input">
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
           </div>
-          {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm disabled:opacity-60 transition-colors"
-          >
+          {error && <p style={{ fontSize: 'var(--t-meta)', color: 'var(--signal-critical)', margin: 0 }}>{error}</p>}
+          <button type="submit" disabled={loading} className="btn btn--primary" style={{ width: '100%', justifyContent: 'center', padding: '10px 0', opacity: loading ? 0.6 : 1 }}>
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
-          <p className="text-center text-xs text-secondary-500 dark:text-gray-400">
+          <p className="meta" style={{ textAlign: 'center' }}>
             No account?{' '}
-            <Link to="/register" className="text-primary-600 dark:text-primary-400 font-semibold hover:underline">
-              Create one
-            </Link>
+            <Link to="/register" style={{ color: 'var(--accent)', fontWeight: 500, textDecoration: 'none' }}>Create one</Link>
           </p>
         </form>
       </div>

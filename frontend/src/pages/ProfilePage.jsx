@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import { browserResearchApi, feedCardsApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
-import { cn } from '@/utils/helpers';
-import { RefreshCw, ExternalLink } from 'lucide-react';
 
 function fmtInt(value) {
   return Number(value || 0).toLocaleString();
@@ -22,7 +20,12 @@ function InitialsAvatar({ name }) {
     .toUpperCase()
     .slice(0, 2);
   return (
-    <div className="w-16 h-16 rounded-2xl bg-primary-600 dark:bg-primary-700 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+    <div style={{
+      width: 56, height: 56, borderRadius: 'var(--r-xl)',
+      background: 'var(--accent)', color: 'var(--fg-on-accent)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 22, fontWeight: 700, fontFamily: 'var(--font-display)',
+    }}>
       {initials}
     </div>
   );
@@ -68,29 +71,19 @@ export default function ProfilePage({ isDark, toggleDark }) {
     try {
       const pins = await feedCardsApi.getMyFeed();
       setMyPins(pins || []);
-    } catch {
-      // silent
-    } finally {
+    } catch { /* silent */ } finally {
       setPinsLoading(false);
     }
   };
 
   const openRunDetail = async (runId) => {
-    if (openRun === runId) {
-      setOpenRun(null);
-      setRunData(null);
-      return;
-    }
+    if (openRun === runId) { setOpenRun(null); setRunData(null); return; }
     setOpenRun(runId);
     setRunLoading(true);
     try {
       const res = await browserResearchApi.getRun(runId);
       setRunData(res);
-    } catch {
-      setRunData(null);
-    } finally {
-      setRunLoading(false);
-    }
+    } catch { setRunData(null); } finally { setRunLoading(false); }
   };
 
   const joinedDate = user?.created_at
@@ -98,123 +91,139 @@ export default function ProfilePage({ isDark, toggleDark }) {
     : null;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
+    <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
       <Header isDark={isDark} toggleDark={toggleDark} />
 
-      <main className="container mx-auto px-4 py-6 max-w-4xl space-y-6">
-
+      <main className="main" style={{ maxWidth: 800, margin: '0 auto', padding: '0 24px 40px' }}>
         {/* User Info Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-6">
-          <div className="flex items-center gap-4">
+        <div className="panel" style={{ marginTop: 32, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <InitialsAvatar name={user?.name} />
-            <div className="flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">{user?.name}</h1>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <h1 style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>{user?.name}</h1>
                 {user?.role === 'admin' && (
-                  <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-400 text-amber-900">Admin</span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                    padding: '2px 8px', borderRadius: 'var(--r-sm)',
+                    background: 'rgba(232,182,92,0.15)', color: 'var(--signal-warn)',
+                  }}>Admin</span>
                 )}
               </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{user?.email}</p>
-              {joinedDate && (
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Member since {joinedDate}</p>
-              )}
+              <p className="meta" style={{ marginTop: 4 }}>{user?.email}</p>
+              {joinedDate && <p className="meta" style={{ marginTop: 2, color: 'var(--fg-4)' }}>Member since {joinedDate}</p>}
             </div>
           </div>
 
-          {/* Stats row */}
-          <div className="mt-5 flex items-center gap-6 pt-4 border-t border-gray-100 dark:border-gray-700">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{pinsLoading ? '…' : myPins.length}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Cards in feed</p>
+          {/* Stats */}
+          <div style={{ display: 'flex', gap: 32, marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line-1)' }}>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>
+                {pinsLoading ? '...' : myPins.length}
+              </p>
+              <p className="meta" style={{ marginTop: 2 }}>Cards in feed</p>
             </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{historyLoading ? '…' : history.length}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Research runs</p>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>
+                {historyLoading ? '...' : history.length}
+              </p>
+              <p className="meta" style={{ marginTop: 2 }}>Research runs</p>
             </div>
           </div>
         </div>
 
         {/* Research History */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
-            <h2 className="text-base font-bold text-gray-900 dark:text-white">Research History</h2>
-            <button
-              onClick={loadHistory}
-              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title="Refresh"
-            >
-              <RefreshCw className={cn('h-4 w-4 text-gray-400', historyLoading && 'animate-spin')} />
+        <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '16px 24px', borderBottom: '1px solid var(--line-1)',
+          }}>
+            <h2 style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>Research History</h2>
+            <button className="iconbtn" onClick={loadHistory} title="Refresh">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={historyLoading ? { animation: 'spin 1s linear infinite' } : undefined}>
+                <path d="M2 7 A5 5 0 0 1 12 7 M12 4 V7 H9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M12 7 A5 5 0 0 1 2 7 M2 10 V7 H5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </button>
           </div>
 
-          {historyError && (
-            <p className="px-5 py-3 text-sm text-red-600 dark:text-red-400">{historyError}</p>
-          )}
+          {historyError && <p style={{ padding: '12px 24px', color: 'var(--signal-critical)', fontSize: 'var(--t-meta)' }}>{historyError}</p>}
 
           {historyLoading && !history.length ? (
-            <div className="flex justify-center py-12">
-              <div className="w-6 h-6 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
+            <div className="empty">
+              <div style={{ width: 24, height: 24, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
             </div>
           ) : history.length === 0 ? (
-            <div className="px-5 py-12 text-center text-sm text-gray-400 dark:text-gray-500">
-              No research runs yet. Use the Browser Research page to start.
+            <div className="empty">
+              <p className="empty__text">No research runs yet. Use the Browser Research page to start.</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+            <div>
               {history.map((h) => (
-                <div key={h.run_id}>
+                <div key={h.run_id} style={{ borderBottom: '1px solid var(--line-1)' }}>
                   <button
                     onClick={() => openRunDetail(h.run_id)}
-                    className="w-full text-left px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors"
+                    style={{
+                      width: '100%', textAlign: 'left', padding: '16px 24px',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: 'inherit', display: 'block',
+                      transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-2)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-1">{h.query}</p>
-                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-400 dark:text-gray-500 flex-wrap">
-                          <span>{new Date(h.generated_at).toLocaleString()}</span>
-                          <span>{h.total_blogs} items</span>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 'var(--t-body)', fontWeight: 600, color: 'var(--fg-1)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.query}</p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
+                          <span className="meta">{new Date(h.generated_at).toLocaleString()}</span>
+                          <span className="meta">{h.total_blogs} items</span>
                           {h.llm_usage && (
-                            <span>{fmtInt(h.llm_usage.total_tokens)} tokens · {fmtUsd(h.llm_usage.estimated_cost_usd)}</span>
+                            <span className="meta mono">{fmtInt(h.llm_usage.total_tokens)} tokens · {fmtUsd(h.llm_usage.estimated_cost_usd)}</span>
                           )}
                         </div>
                       </div>
-                      <span className={cn('text-xs font-semibold transition-transform', openRun === h.run_id ? 'rotate-180' : '')}>
-                        ▾
-                      </span>
+                      <span style={{
+                        fontSize: 'var(--t-meta)', fontWeight: 600,
+                        transition: 'transform 0.2s',
+                        transform: openRun === h.run_id ? 'rotate(180deg)' : 'none',
+                        color: 'var(--fg-3)',
+                      }}>▾</span>
                     </div>
                   </button>
 
                   {openRun === h.run_id && (
-                    <div className="px-5 pb-4 bg-gray-50 dark:bg-gray-700/20">
+                    <div style={{ padding: '0 24px 16px', background: 'var(--bg-2)' }}>
                       {runLoading ? (
-                        <div className="flex items-center gap-2 py-3 text-sm text-gray-400">
-                          <div className="w-4 h-4 border border-gray-400 border-t-transparent rounded-full animate-spin" />
-                          Loading…
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0' }}>
+                          <div style={{ width: 16, height: 16, border: '1.5px solid var(--fg-3)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                          <span className="meta">Loading...</span>
                         </div>
                       ) : runData ? (
-                        <div className="space-y-2 pt-2 max-h-64 overflow-y-auto">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 8, maxHeight: 256, overflowY: 'auto' }}>
                           {(runData.blogs || []).slice(0, 10).map((b, idx) => (
-                            <div key={idx} className="flex items-start gap-2 text-xs">
-                              <span className={cn(
-                                'flex-shrink-0 px-1.5 py-0.5 rounded font-bold uppercase',
-                                b.source === 'reddit' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' :
-                                b.source === 'youtube' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' :
-                                'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                              )}>{b.source}</span>
-                              <span className="text-gray-700 dark:text-gray-300 line-clamp-1 flex-1">{b.title}</span>
+                            <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 'var(--t-meta)' }}>
+                              <span style={{
+                                flexShrink: 0, padding: '1px 6px', borderRadius: 'var(--r-sm)',
+                                fontWeight: 700, textTransform: 'uppercase', fontSize: 10,
+                                background: b.source === 'reddit' ? 'rgba(232,145,60,0.12)' : b.source === 'youtube' ? 'rgba(240,110,110,0.12)' : 'var(--accent-soft)',
+                                color: b.source === 'reddit' ? '#E8913C' : b.source === 'youtube' ? 'var(--signal-critical)' : 'var(--accent)',
+                              }}>{b.source}</span>
+                              <span style={{ color: 'var(--fg-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.title}</span>
                               {b.url && (
-                                <a href={b.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex-shrink-0 text-primary-500 hover:text-primary-700">
-                                  <ExternalLink className="h-3 w-3" />
+                                <a href={b.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                                  style={{ flexShrink: 0, color: 'var(--accent)' }}>
+                                  <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M4 10 L10 4 M10 4 H5.5 M10 4 V8.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                                 </a>
                               )}
                             </div>
                           ))}
                           {(runData.blogs || []).length > 10 && (
-                            <p className="text-xs text-gray-400 pt-1">+{runData.blogs.length - 10} more items</p>
+                            <p className="meta" style={{ paddingTop: 4 }}>+{runData.blogs.length - 10} more items</p>
                           )}
                         </div>
                       ) : (
-                        <p className="text-xs text-gray-400 py-2">Could not load run details.</p>
+                        <p className="meta" style={{ padding: '8px 0' }}>Could not load run details.</p>
                       )}
                     </div>
                   )}
@@ -223,8 +232,9 @@ export default function ProfilePage({ isDark, toggleDark }) {
             </div>
           )}
         </div>
-
       </main>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

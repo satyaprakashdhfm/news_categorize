@@ -1,7 +1,13 @@
 import React from 'react';
-import { Clock3 } from 'lucide-react';
-import { CATEGORIES, DOMAIN_COLORS, SUBCATEGORY_CODES, SUBCATEGORY_LABELS } from '@/utils/helpers';
-import { cn } from '@/utils/helpers';
+import { CATEGORIES, SUBCATEGORY_CODES, SUBCATEGORY_LABELS, cn } from '@/utils/helpers';
+
+const DOMAIN_COLORS = {
+  POL: 'var(--domain-policy)',
+  ECO: 'var(--domain-econ)',
+  BUS: 'var(--domain-biz)',
+  TEC: 'var(--domain-tech)',
+  OTH: 'var(--domain-others)',
+};
 
 const TIME_OPTIONS = [
   { value: '6', label: '6h' },
@@ -12,70 +18,44 @@ const TIME_OPTIONS = [
   { value: '', label: 'All' },
 ];
 
-const DNA_BADGE = {
-  POL: 'ring-blue-200 dark:ring-blue-700 bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  ECO: 'ring-emerald-200 dark:ring-emerald-700 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-  BUS: 'ring-violet-200 dark:ring-violet-700 bg-violet-50 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
-  TEC: 'ring-orange-200 dark:ring-orange-700 bg-orange-50 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
-  OTH: 'ring-gray-200 dark:ring-gray-600 bg-gray-50 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
-};
-
 export default function FilterBar({ domain, setDomain, subdomain, setSubdomain, hoursBack, setHoursBack }) {
   const subcodes = domain ? (SUBCATEGORY_CODES[domain] || []) : [];
 
   return (
-    <div className="space-y-2">
-      {/* Row 1: Domain + time */}
-      <div className="flex flex-wrap items-center gap-2 py-2.5 px-4 bg-white dark:bg-gray-800 rounded-xl border border-secondary-100 dark:border-gray-700 shadow-sm">
-        {/* Domain pills */}
-        <div className="flex items-center gap-1.5 flex-wrap flex-1">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="filters">
+        {/* Domain chips */}
+        <div className="filters__chips">
           <button
+            className={`fchip ${!domain ? 'is-on' : ''}`}
             onClick={() => { setDomain(''); setSubdomain?.(''); }}
-            className={cn(
-              'px-3 py-1 rounded-full text-xs font-semibold transition-all',
-              !domain
-                ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-sm'
-                : 'bg-secondary-100 dark:bg-gray-700 text-secondary-600 dark:text-gray-300 hover:bg-secondary-200 dark:hover:bg-gray-600',
-            )}
           >
             All
           </button>
-          {CATEGORIES.map((cat) => {
-            const colors = DOMAIN_COLORS[cat.id];
-            const active = domain === cat.id;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => { setDomain(active ? '' : cat.id); setSubdomain?.(''); }}
-                className={cn(
-                  'px-3 py-1 rounded-full text-xs font-semibold transition-all',
-                  active
-                    ? `${colors.bg} ${colors.text} shadow-sm`
-                    : 'bg-secondary-100 dark:bg-gray-700 text-secondary-600 dark:text-gray-300 hover:bg-secondary-200 dark:hover:bg-gray-600',
-                )}
-              >
-                {cat.icon} {cat.name}
-              </button>
-            );
-          })}
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat.id}
+              className={`fchip ${domain === cat.id ? 'is-on' : ''}`}
+              style={{ '--chipColor': DOMAIN_COLORS[cat.id] }}
+              onClick={() => { setDomain(domain === cat.id ? '' : cat.id); setSubdomain?.(''); }}
+            >
+              <span className="fchip__dot" />
+              {cat.name}
+            </button>
+          ))}
         </div>
 
-        {/* Divider */}
-        <div className="hidden sm:block w-px h-5 bg-secondary-200 dark:bg-gray-600 mx-1" />
-
-        {/* Time window */}
-        <div className="flex items-center gap-1.5">
-          <Clock3 className="h-3.5 w-3.5 text-secondary-400 dark:text-gray-500 flex-shrink-0" />
+        {/* Time pills */}
+        <div className="filters__time">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ color: 'var(--fg-3)' }}>
+            <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3"/>
+            <path d="M6 3 V6 L8 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+          </svg>
           {TIME_OPTIONS.map((opt) => (
             <button
               key={opt.value}
+              className={`tchip ${hoursBack === opt.value ? 'is-on' : ''}`}
               onClick={() => setHoursBack(opt.value)}
-              className={cn(
-                'px-2.5 py-1 rounded-full text-xs font-semibold transition-all',
-                hoursBack === opt.value
-                  ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-sm'
-                  : 'bg-secondary-100 dark:bg-gray-700 text-secondary-600 dark:text-gray-300 hover:bg-secondary-200 dark:hover:bg-gray-600',
-              )}
             >
               {opt.label}
             </button>
@@ -83,41 +63,29 @@ export default function FilterBar({ domain, setDomain, subdomain, setSubdomain, 
         </div>
       </div>
 
-      {/* Row 2: DNA subcategory pills (only when a domain is selected) */}
+      {/* DNA subcategory row */}
       {domain && subcodes.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 bg-white/60 dark:bg-gray-800/60 rounded-xl border border-secondary-100 dark:border-gray-700/50">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500 mr-1">
-            DNA
-          </span>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+          padding: '8px 0',
+        }}>
+          <span className="eyebrow" style={{ marginRight: 4 }}>DNA</span>
           <button
+            className={`tchip ${!subdomain ? 'is-on' : ''}`}
             onClick={() => setSubdomain?.('')}
-            className={cn(
-              'px-2.5 py-0.5 rounded-md text-xs font-semibold transition-all',
-              !subdomain
-                ? `ring-1 font-mono ${DNA_BADGE[domain] || DNA_BADGE.OTH}`
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600',
-            )}
           >
             All
           </button>
-          {subcodes.map((code) => {
-            const active = subdomain === code;
-            return (
-              <button
-                key={code}
-                onClick={() => setSubdomain?.(active ? '' : code)}
-                className={cn(
-                  'px-2.5 py-0.5 rounded-md text-xs font-mono font-semibold transition-all ring-1',
-                  active
-                    ? DNA_BADGE[domain] || DNA_BADGE.OTH
-                    : 'ring-gray-200 dark:ring-gray-600 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:ring-current',
-                )}
-                title={SUBCATEGORY_LABELS[code]}
-              >
-                {domain}·{code}
-              </button>
-            );
-          })}
+          {subcodes.map((code) => (
+            <button
+              key={code}
+              className={`tchip ${subdomain === code ? 'is-on' : ''}`}
+              onClick={() => setSubdomain?.(subdomain === code ? '' : code)}
+              title={SUBCATEGORY_LABELS[code]}
+            >
+              {domain}·{code}
+            </button>
+          ))}
         </div>
       )}
     </div>

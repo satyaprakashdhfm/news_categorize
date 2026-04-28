@@ -4,7 +4,7 @@ import Header from "@/components/Header";
 
 export default function HelpPage({ isDark, toggleDark }) {
   const [proxyUrl, setProxyUrl] = useState("");
-  const [proxyConfigured, setProxyConfigured] = useState(null); // null=loading, true/false
+  const [proxyConfigured, setProxyConfigured] = useState(null);
 
   useEffect(() => {
     axios.get("/api/debug/proxy-config").then(({ data }) => {
@@ -12,10 +12,10 @@ export default function HelpPage({ isDark, toggleDark }) {
       if (data.masked_url) setProxyUrl(data.masked_url);
     }).catch(() => setProxyConfigured(false));
   }, []);
+
   const [subreddit, setSubreddit] = useState("technology");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-
   const [noProxyLoading, setNoProxyLoading] = useState(false);
   const [noProxyResult, setNoProxyResult] = useState(null);
 
@@ -36,177 +36,153 @@ export default function HelpPage({ isDark, toggleDark }) {
   }
 
   return (
-    <div className="min-h-screen bg-secondary-50 dark:bg-gray-900 transition-colors">
+    <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
       <Header isDark={isDark} toggleDark={toggleDark} />
-    <div className="px-4 py-8">
-      <div className="max-w-2xl mx-auto space-y-6">
 
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-secondary-900 dark:text-white">Help & Diagnostics</h1>
-          <p className="text-secondary-500 dark:text-gray-400 text-sm mt-1">
-            Test Reddit connectivity and proxy settings from the VM directly.
-          </p>
+      <main className="main" style={{ maxWidth: 720, margin: '0 auto', padding: '0 24px' }}>
+        <div className="page">
+          <div className="page__title">
+            <h1 className="display">Help &<br/><em>Diagnostics</em></h1>
+            <p className="page__sub">Test Reddit connectivity and proxy settings from the VM directly.</p>
+          </div>
         </div>
 
-        {/* Proxy Tester Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow border border-secondary-100 dark:border-gray-700 p-6 space-y-5">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-secondary-800 dark:text-white">Reddit Proxy Tester</h2>
-            {proxyConfigured === null && <span className="text-xs text-secondary-400">loading…</span>}
-            {proxyConfigured === true  && <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">Proxy configured</span>}
-            {proxyConfigured === false && <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">No proxy set</span>}
-          </div>
-
-          {/* Inputs */}
-          <div className="space-y-3">
+        {/* Proxy Tester */}
+        <div className="panel" style={{ marginBottom: 20 }}>
+          <header className="panel__head">
             <div>
-              <label className="block text-sm font-medium text-secondary-700 dark:text-gray-300 mb-1">
-                Proxy URL <span className="text-secondary-400 font-normal">(password masked)</span>
-              </label>
-              <input
-                type="text"
-                value={proxyUrl}
-                readOnly
-                placeholder="Not configured"
-                className="w-full px-3 py-2 rounded-lg border border-secondary-200 dark:border-gray-600 bg-secondary-50 dark:bg-gray-700/50 text-secondary-700 dark:text-gray-300 text-sm font-mono cursor-default select-all"
-              />
+              <h2 className="panel__title">Reddit Proxy Tester</h2>
+              <p className="panel__sub">
+                {proxyConfigured === null && 'Loading proxy status...'}
+                {proxyConfigured === true && 'Proxy is configured and ready.'}
+                {proxyConfigured === false && 'No proxy configured.'}
+              </p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-secondary-700 dark:text-gray-300 mb-1">
-                Subreddit to test
-              </label>
-              <input
-                type="text"
-                value={subreddit}
-                onChange={e => setSubreddit(e.target.value)}
-                placeholder="technology"
-                className="w-full px-3 py-2 rounded-lg border border-secondary-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-secondary-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
-              />
+            {proxyConfigured === true && <span className="badge badge--live"><span className="badge__dot" />Configured</span>}
+            {proxyConfigured === false && <span className="badge" style={{ background: 'rgba(240,110,110,0.12)', color: 'var(--signal-critical)' }}><span className="badge__dot" />No proxy</span>}
+          </header>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="field">
+              <label className="field__label">Proxy URL (password masked)</label>
+              <div className="field__input">
+                <input type="text" value={proxyUrl} readOnly placeholder="Not configured" style={{ cursor: 'default' }} />
+              </div>
+            </div>
+            <div className="field">
+              <label className="field__label">Subreddit to test</label>
+              <div className="field__input">
+                <input type="text" value={subreddit} onChange={e => setSubreddit(e.target.value)} placeholder="technology" />
+              </div>
             </div>
           </div>
 
-          {/* Buttons */}
-          <div className="flex gap-3 flex-wrap">
-            <button
-              onClick={() => runTest(true, setLoading, setResult)}
-              disabled={loading}
-              className="px-5 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-semibold text-sm shadow transition-colors"
-            >
-              {loading ? "Testing…" : "Test with Proxy"}
+          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            <button className="btn btn--primary" onClick={() => runTest(true, setLoading, setResult)} disabled={loading}
+              style={{ opacity: loading ? 0.6 : 1 }}>
+              {loading ? "Testing..." : "Test with Proxy"}
             </button>
-            <button
-              onClick={() => runTest(false, setNoProxyLoading, setNoProxyResult)}
-              disabled={noProxyLoading}
-              className="px-5 py-2 rounded-xl bg-secondary-200 hover:bg-secondary-300 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 text-secondary-800 dark:text-white font-semibold text-sm shadow transition-colors"
-            >
-              {noProxyLoading ? "Testing…" : "Test without Proxy"}
+            <button className="btn" onClick={() => runTest(false, setNoProxyLoading, setNoProxyResult)} disabled={noProxyLoading}
+              style={{ opacity: noProxyLoading ? 0.6 : 1 }}>
+              {noProxyLoading ? "Testing..." : "Test without Proxy"}
             </button>
           </div>
 
-          {/* Results */}
-          <div className="space-y-3">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
             <ResultCard label="With Proxy" result={result} loading={loading} />
             <ResultCard label="Without Proxy" result={noProxyResult} loading={noProxyLoading} />
           </div>
         </div>
 
         {/* Info Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow border border-secondary-100 dark:border-gray-700 p-6 space-y-3">
-          <h2 className="text-lg font-semibold text-secondary-800 dark:text-white">Proxy Info</h2>
-          <div className="text-sm text-secondary-600 dark:text-gray-300 space-y-1">
-            <p><span className="font-medium">Provider:</span> Webshare.io (residential free tier)</p>
-            <p><span className="font-medium">Monthly bandwidth:</span> 1 GB</p>
-            <p><span className="font-medium">Usage estimate:</span> ~3 MB per scrape · ~18 MB per browser session</p>
-            <p><span className="font-medium">Budget:</span> ~300 scrape calls OR ~55 browser research sessions/month</p>
-            <p className="text-secondary-400 dark:text-gray-500 pt-1 text-xs">
-              To rotate: update REDDIT_PROXY_URL in deploy_vm.sh and redeploy.
-            </p>
+        <div className="panel">
+          <h2 className="panel__title" style={{ marginBottom: 12 }}>Proxy Info</h2>
+          <div style={{ fontSize: 'var(--t-meta)', color: 'var(--fg-2)', lineHeight: 1.8 }}>
+            <p style={{ margin: 0 }}><strong style={{ color: 'var(--fg-1)' }}>Provider:</strong> Webshare.io (residential free tier)</p>
+            <p style={{ margin: 0 }}><strong style={{ color: 'var(--fg-1)' }}>Monthly bandwidth:</strong> 1 GB</p>
+            <p style={{ margin: 0 }}><strong style={{ color: 'var(--fg-1)' }}>Usage estimate:</strong> ~3 MB per scrape · ~18 MB per browser session</p>
+            <p style={{ margin: 0 }}><strong style={{ color: 'var(--fg-1)' }}>Budget:</strong> ~300 scrape calls OR ~55 browser research sessions/month</p>
+            <p className="meta" style={{ marginTop: 8 }}>To rotate: update REDDIT_PROXY_URL in deploy_vm.sh and redeploy.</p>
           </div>
         </div>
-
-      </div>
-    </div>
+      </main>
     </div>
   );
 }
 
 function diagnose(result) {
   if (!result) return null;
-  if (result.ok) return { label: "Working fine", color: "green", hint: null };
-
+  if (result.ok) return { label: "Working fine", color: "positive", hint: null };
   const err = (result.error || "").toLowerCase();
   const status = result.status;
-
   if (err.includes("quota") || err.includes("bandwidth") || err.includes("exceeded") || status === 509)
-    return { label: "Quota exceeded", color: "red", hint: "1 GB monthly limit hit — rotate to a new proxy." };
-
+    return { label: "Quota exceeded", color: "critical", hint: "1 GB monthly limit hit — rotate to a new proxy." };
   if (status === 407 || err.includes("407") || err.includes("proxy auth") || err.includes("credentials"))
-    return { label: "Proxy auth failed", color: "red", hint: "Wrong username/password in proxy URL." };
-
+    return { label: "Proxy auth failed", color: "critical", hint: "Wrong username/password in proxy URL." };
   if (err.includes("cannot connect to host") && err.includes("6754"))
-    return { label: "Proxy unreachable", color: "red", hint: "Proxy server is down or IP/port is wrong." };
-
+    return { label: "Proxy unreachable", color: "critical", hint: "Proxy server is down or IP/port is wrong." };
   if (err.includes("connect") || err.includes("timeout") || err.includes("timed out"))
-    return { label: "Connection timeout", color: "orange", hint: "Proxy not responding — may be overloaded or dead." };
-
+    return { label: "Connection timeout", color: "warn", hint: "Proxy not responding — may be overloaded or dead." };
   if (status === 403)
-    return { label: "Reddit blocked this IP", color: "red", hint: "This proxy IP is blocked by Reddit — not residential enough." };
-
+    return { label: "Reddit blocked this IP", color: "critical", hint: "This proxy IP is blocked by Reddit — not residential enough." };
   if (status === 429)
-    return { label: "Rate limited by Reddit", color: "orange", hint: "Too many requests — wait a minute and retry." };
-
+    return { label: "Rate limited by Reddit", color: "warn", hint: "Too many requests — wait a minute and retry." };
   if (status === 200 && !result.ok)
-    return { label: "Unexpected response", color: "orange", hint: "Got 200 but no posts — Reddit may have changed its format." };
-
-  return { label: `HTTP ${status || "error"}`, color: "red", hint: result.error };
+    return { label: "Unexpected response", color: "warn", hint: "Got 200 but no posts — Reddit may have changed its format." };
+  return { label: `HTTP ${status || "error"}`, color: "critical", hint: result.error };
 }
 
-const diagColors = {
-  green:  "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-  red:    "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-  orange: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+const diagStyles = {
+  positive: { background: 'rgba(139,196,138,0.12)', color: 'var(--signal-positive)' },
+  critical: { background: 'rgba(240,110,110,0.12)', color: 'var(--signal-critical)' },
+  warn: { background: 'rgba(232,182,92,0.12)', color: 'var(--signal-warn)' },
 };
 
 function ResultCard({ label, result, loading }) {
   if (loading) {
     return (
-      <div className="rounded-xl border border-secondary-100 dark:border-gray-600 p-4 text-sm text-secondary-500 dark:text-gray-400 animate-pulse">
-        {label}: connecting…
+      <div style={{
+        padding: 16, borderRadius: 'var(--r-lg)', border: '1px solid var(--line-1)',
+        fontSize: 'var(--t-meta)', color: 'var(--fg-3)',
+      }}>
+        {label}: connecting...
       </div>
     );
   }
   if (!result) return null;
-
   const diag = diagnose(result);
+  const borderColor = result.ok ? 'rgba(139,196,138,0.3)' : 'rgba(240,110,110,0.3)';
 
   return (
-    <div className={`rounded-xl border p-4 text-sm space-y-2 ${
-      result.ok
-        ? "border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800"
-        : "border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800"
-    }`}>
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className={`font-semibold ${result.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+    <div style={{
+      padding: 16, borderRadius: 'var(--r-lg)',
+      border: `1px solid ${borderColor}`,
+      background: result.ok ? 'rgba(139,196,138,0.06)' : 'rgba(240,110,110,0.06)',
+      display: 'flex', flexDirection: 'column', gap: 8,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 600, fontSize: 'var(--t-body)', color: result.ok ? 'var(--signal-positive)' : 'var(--signal-critical)' }}>
           {result.ok ? "✓" : "✗"} {label}
         </span>
         {diag && (
-          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${diagColors[diag.color]}`}>
-            {diag.label}
-          </span>
+          <span style={{
+            ...diagStyles[diag.color],
+            padding: '2px 10px', borderRadius: 'var(--r-pill)',
+            fontSize: 'var(--t-micro)', fontWeight: 600,
+          }}>{diag.label}</span>
         )}
         {result.elapsed_ms != null && (
-          <span className="text-secondary-400 dark:text-gray-500 text-xs ml-auto">{result.elapsed_ms} ms</span>
+          <span className="meta mono" style={{ marginLeft: 'auto' }}>{result.elapsed_ms} ms</span>
         )}
       </div>
       {diag?.hint && !result.ok && (
-        <p className="text-secondary-600 dark:text-gray-400 text-xs">{diag.hint}</p>
+        <p className="meta">{diag.hint}</p>
       )}
       {result.posts?.length > 0 && (
-        <ul className="space-y-1 pt-1">
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
           {result.posts.map((p, i) => (
-            <li key={i} className="text-secondary-700 dark:text-gray-300 text-xs">
-              <span className="text-secondary-400 dark:text-gray-500 mr-1">↑{p.score}</span>{p.title}
+            <li key={i} style={{ fontSize: 'var(--t-meta)', color: 'var(--fg-2)' }}>
+              <span className="meta" style={{ marginRight: 4 }}>↑{p.score}</span>{p.title}
             </li>
           ))}
         </ul>

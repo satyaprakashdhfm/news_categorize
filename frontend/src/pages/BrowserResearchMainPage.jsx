@@ -19,7 +19,6 @@ function AddToFeedBtn({ cardId }) {
       await feedCardsApi.pin(cardId);
       setPinned(true);
     } catch {
-      // 409 = already pinned
       setPinned(true);
     } finally {
       setBusy(false);
@@ -28,36 +27,21 @@ function AddToFeedBtn({ cardId }) {
 
   if (pinned) {
     return (
-      <span className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/60 dark:bg-gray-800/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-600">
-        ✓ Saved
-      </span>
+      <span className="badge badge--live"><span className="badge__dot" />Saved</span>
     );
   }
 
   return (
-    <button
-      onClick={handleAdd}
-      disabled={busy}
-      className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-700 dark:hover:text-primary-300 hover:border-primary-300 dark:hover:border-primary-600 transition-all"
-    >
-      {busy ? '…' : '+ Add to My Feed'}
+    <button onClick={handleAdd} disabled={busy} className="btn" style={{ padding: '4px 12px', fontSize: 'var(--t-micro)' }}>
+      {busy ? '...' : '+ Add to My Feed'}
     </button>
   );
 }
 
 function compact(text, n = SUMMARY_PREVIEW_CHARS) {
   const value = String(text || '').trim();
-  if (value.length <= n) {
-    return { text: value, truncated: false };
-  }
+  if (value.length <= n) return { text: value, truncated: false };
   return { text: `${value.slice(0, n)}...`, truncated: true };
-}
-
-function splitChannels(raw) {
-  return String(raw || '')
-    .split('\n')
-    .map((x) => x.trim())
-    .filter(Boolean);
 }
 
 function fmtInt(value) {
@@ -68,61 +52,52 @@ function fmtUsd(value) {
   return `$${Number(value || 0).toFixed(6)}`;
 }
 
+const SUGGESTED = [
+  'US AI startup funding and open source models',
+  'Semiconductor export controls — last 7 days',
+  'Central bank communications, G7 focus',
+  'Cross-border M&A in European industrials',
+];
+
 export default function BrowserResearchMainPage({ isDark, toggleDark }) {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [query, setQuery] = useState('US AI startup funding and open source models');
-  const [channelsText, setChannelsText] = useState('@OpenAI\n@GoogleDeepMind');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
   const [sourceFilter, setSourceFilter] = useState('all');
   const [expanded, setExpanded] = useState({});
   const [history, setHistory] = useState([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState('');
   const [autoRunKey, setAutoRunKey] = useState('');
   const [processingLog, setProcessingLog] = useState([]);
-  const [streamPhase, setStreamPhase] = useState('idle'); // 'idle' | 'streaming' | 'done' | 'error'
+  const [streamPhase, setStreamPhase] = useState('idle');
   const abortRef = useRef(null);
   const [liveScreenshot, setLiveScreenshot] = useState(null);
   const [currentUrl, setCurrentUrl] = useState('');
 
-  // Save-as-card state
   const [cardTitle, setCardTitle] = useState('');
   const [cardDomain, setCardDomain] = useState('');
   const [cardSubdomain, setCardSubdomain] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [savedCardId, setSavedCardId] = useState(null);
-
-  // Auto-attach result notification
-  const [attachResult, setAttachResult] = useState(null); // { merged, card_id, message }
+  const [attachResult, setAttachResult] = useState(null);
 
   const blogs = useMemo(() => {
     const items = data?.blogs || [];
-    if (sourceFilter === 'all') {
-      return items;
-    }
+    if (sourceFilter === 'all') return items;
     return items.filter((b) => b.source === sourceFilter);
   }, [data, sourceFilter]);
 
-  const toggleExpand = (key) => {
-    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const toggleExpand = (key) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const loadHistory = async () => {
-    setHistoryLoading(true);
-    setHistoryError('');
     try {
       const res = await browserResearchApi.getHistory({ limit: 20 });
       setHistory(res?.runs || []);
-    } catch (err) {
-      setHistoryError(err?.response?.data?.detail || err.message || 'Failed to load run history');
-    } finally {
-      setHistoryLoading(false);
-    }
+    } catch { /* silent */ }
   };
 
   const openRun = async (runId) => {
@@ -141,9 +116,7 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
     }
   };
 
-  useEffect(() => {
-    loadHistory();
-  }, []);
+  useEffect(() => { loadHistory(); }, []);
 
   useEffect(() => {
     const q = String(searchParams.get('q') || '').trim();
@@ -151,14 +124,11 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
     const sub = String(searchParams.get('subdomain') || '').trim().toUpperCase();
     const shouldAutoRun = String(searchParams.get('autorun') || '') === '1';
     if (!q) return;
-
     setQuery(q);
     if (d) setCardDomain(d);
     if (sub) setCardSubdomain(sub);
-
     if (shouldAutoRun && autoRunKey !== q && !loading) {
       setAutoRunKey(q);
-      // Clear autorun from URL so refresh won't re-trigger research
       const next = new URLSearchParams(searchParams);
       next.delete('autorun');
       navigate(`/custom/browser?${next.toString()}`, { replace: true });
@@ -168,10 +138,7 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
 
   const runResearch = async (queryOverride) => {
     const effectiveQuery = String(queryOverride || query || '').trim();
-    if (effectiveQuery.length < 3) {
-      setError('Query must be at least 3 characters');
-      return;
-    }
+    if (effectiveQuery.length < 3) { setError('Query must be at least 3 characters'); return; }
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -214,7 +181,6 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop();
@@ -241,7 +207,6 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
               { run_id: res.run_id, query: res.query, total_blogs: res.total_blogs, generated_at: res.generated_at, llm_usage: res.llm_usage },
               ...prev.filter((x) => x.run_id !== res.run_id),
             ].slice(0, 20));
-            // Auto-attach to global feed (merge or create)
             feedCardsApi.attachRun({
               run_id: res.run_id,
               query: res.query,
@@ -256,29 +221,17 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
         }
       }
     } catch (err) {
-      if (err.name === 'AbortError') {
-        setStreamPhase('idle');
-        setError('');
-      } else {
-        setError(err.message || 'Research run failed');
-        setStreamPhase('error');
-      }
+      if (err.name === 'AbortError') { setStreamPhase('idle'); setError(''); }
+      else { setError(err.message || 'Research run failed'); setStreamPhase('error'); }
     } finally {
       setLoading(false);
       abortRef.current = null;
     }
   };
 
-  const cancelResearch = () => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
-  };
+  const cancelResearch = () => { if (abortRef.current) abortRef.current.abort(); };
 
-  const run = async (e) => {
-    e.preventDefault();
-    await runResearch();
-  };
+  const run = async (e) => { e.preventDefault(); await runResearch(); };
 
   const saveAsCard = async () => {
     if (!data?.run_id || saving) return;
@@ -286,12 +239,9 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
     setSaveError('');
     try {
       const card = await feedCardsApi.create({
-        type: 'custom',
-        title: cardTitle || data.query,
-        domain: cardDomain || null,
-        subdomain: cardSubdomain || null,
-        run_id: data.run_id,
-        is_global: true,
+        type: 'custom', title: cardTitle || data.query,
+        domain: cardDomain || null, subdomain: cardSubdomain || null,
+        run_id: data.run_id, is_global: true,
       });
       await feedCardsApi.pin(card.id);
       setSavedCardId(card.id);
@@ -305,302 +255,418 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
   const subdominOptions = SUBCATEGORY_CODES[cardDomain] || [];
 
   return (
-    <div className="min-h-screen bg-secondary-50 dark:bg-gray-900 transition-colors">
+    <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
       <Header isDark={isDark} toggleDark={toggleDark} />
 
-      <main className="container mx-auto px-4 py-8 space-y-6">
-        <section className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-transparent dark:border-gray-700">
-          <h1 className="text-2xl font-bold text-secondary-900 dark:text-white">Browser Research (Primary)</h1>
-          <p className="text-sm text-secondary-600 dark:text-gray-300 mt-2">
-            Main browser-based flow. Old custom YouTube and custom Reddit pages remain available as backup.
-          </p>
-          <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-2">
-            Relevance filtering disabled: all collected items are kept as cards.
-          </p>
-        </section>
-
-        <form onSubmit={run} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-transparent dark:border-gray-700 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 dark:text-gray-300 mb-2">Research Query</label>
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              minLength={3}
-              required
-              placeholder="e.g. what's happening with China AI policy"
-              className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-3 text-secondary-900 dark:text-white"
-            />
+      <main className="main" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px' }}>
+        {/* Page header */}
+        <div className="page">
+          <div className="page__title">
+            <h1 className="display">Custom<br/><em>Research</em></h1>
+            <p className="page__sub">
+              Dynamically discover Reddit communities, search YouTube, and scrape Google News for any query — grounded in real URLs, no hallucinated sources.
+            </p>
           </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-6 py-3 rounded-lg font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-60"
-            >
-              {loading ? 'Browsing the web...' : 'Run Live Browser Research'}
-            </button>
-            {loading && (
-              <button
-                type="button"
-                onClick={cancelResearch}
-                className="px-5 py-3 rounded-lg font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors"
-              >
-                Cancel
-              </button>
-            )}
+          <div className="page__actions">
+            <div className="metric">
+              <span className="eyebrow">Mode</span>
+              <span className="metric__val">Browser (Primary)</span>
+            </div>
+            <div className="metric">
+              <span className="eyebrow">LLM calls / run</span>
+              <span className="metric__val mono">2</span>
+            </div>
           </div>
-
-          <p className="text-xs text-secondary-500 dark:text-gray-400">
-            Browser will dynamically discover Reddit communities, search YouTube, and scrape Google News for your query. 2 LLM calls total.
-          </p>
-
-          {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
-        </form>
-
-        {(loading || liveScreenshot) ? (
-          <section className="bg-gray-950 rounded-xl shadow-xl border border-gray-800 overflow-hidden">
-            {/* Browser chrome bar */}
-            <div className="flex items-center gap-2 px-4 py-2 bg-gray-900 border-b border-gray-800">
-              <div className="flex gap-1.5">
-                <span className="w-3 h-3 rounded-full bg-red-500 opacity-80" />
-                <span className="w-3 h-3 rounded-full bg-yellow-400 opacity-80" />
-                <span className="w-3 h-3 rounded-full bg-green-500 opacity-80" />
-              </div>
-              <div className="flex-1 mx-3 px-3 py-1 rounded-md bg-gray-800 text-xs text-gray-400 font-mono truncate flex items-center gap-2">
-                {loading && <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />}
-                {currentUrl || 'about:blank'}
-              </div>
-              <span className="text-xs text-gray-500 font-semibold">
-                {loading ? 'Browsing...' : 'Done'}
-              </span>
-            </div>
-            {/* Viewport */}
-            <div className="relative bg-gray-900 min-h-[200px] sm:min-h-[320px] md:min-h-[400px]">
-              {liveScreenshot ? (
-                <img
-                  src={`data:image/jpeg;base64,${liveScreenshot}`}
-                  alt="Live browser view"
-                  className="w-full block"
-                  style={{ imageRendering: 'auto' }}
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center h-40 sm:h-56 md:h-64 gap-3 text-gray-500">
-                  <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-sm">Launching browser...</span>
-                </div>
-              )}
-              {loading && liveScreenshot && (
-                <div className="absolute bottom-3 right-3 flex items-center gap-2 bg-black/60 text-white text-xs px-3 py-1.5 rounded-full backdrop-blur-sm">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                  LIVE
-                </div>
-              )}
-            </div>
-          </section>
-        ) : null}
-
-        <section className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-transparent dark:border-gray-700">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-secondary-900 dark:text-white">Live Browser Research Feed</h2>
-            <span className={`text-xs font-semibold px-2 py-1 rounded ${
-              streamPhase === 'streaming' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' :
-              streamPhase === 'done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300' :
-              streamPhase === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
-              'bg-secondary-100 text-secondary-500 dark:bg-gray-700 dark:text-gray-400'
-            }`}>
-              {streamPhase === 'streaming' ? '⬤ Streaming live...' :
-               streamPhase === 'done' ? '✓ Complete' :
-               streamPhase === 'error' ? '✗ Error' : 'Idle'}
-            </span>
-          </div>
-
-          {processingLog.length === 0 ? (
-            <p className="text-sm text-secondary-600 dark:text-gray-300">No run yet. Start browser research to see the live step-by-step feed.</p>
-          ) : (
-            <div className="rounded-lg bg-gray-950 dark:bg-gray-950 border border-gray-800 p-3 sm:p-4 font-mono text-xs max-h-48 sm:max-h-72 overflow-auto space-y-1">
-              {streamPhase === 'streaming' && (
-                <div className="flex items-center gap-2 text-amber-400 mb-2">
-                  <span className="animate-pulse">▶</span>
-                  <span>Research in progress — streaming live steps below</span>
-                </div>
-              )}
-              {processingLog.map((line, idx) => {
-                const isArrow = line.includes('  →');
-                const isError = line.toLowerCase().includes('error');
-                const isDone = line.toLowerCase().includes('done') || line.toLowerCase().includes('complete');
-                return (
-                  <div
-                    key={`${line}-${idx}`}
-                    className={`leading-relaxed ${
-                      isError ? 'text-red-400' :
-                      isDone ? 'text-emerald-400' :
-                      isArrow ? 'text-gray-400 pl-4' :
-                      'text-green-300'
-                    }`}
-                  >
-                    {isArrow ? '' : '› '}{line}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* History moved to Profile page */}
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs text-secondary-400 dark:text-gray-500">Research history is available on your Profile page.</span>
-          <button onClick={() => navigate('/profile')} className="text-xs text-primary-600 dark:text-primary-400 font-semibold hover:underline">View history →</button>
         </div>
 
-        {data ? (
-          <section className="space-y-4">
-            {/* ── Global Feed status ───────────────────────────────────── */}
-            {streamPhase === 'done' && (
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border border-emerald-200 dark:border-emerald-800">
-                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-                  <h2 className="text-base font-bold text-secondary-900 dark:text-white">Global Feed</h2>
-                  <button onClick={() => navigate('/')} className="text-xs text-primary-600 dark:text-primary-400 font-semibold hover:underline">View Home Feed →</button>
+        <div className="custom">
+          {/* Left column */}
+          <div className="custom__left">
+            {/* Research input panel */}
+            <section className="panel">
+              <header className="panel__head">
+                <div>
+                  <h2 className="panel__title">Browser Research</h2>
+                  <p className="panel__sub">Main browser-based flow. Old Reddit and YouTube adapters remain available as backup.</p>
+                </div>
+                <span className="badge badge--info"><span className="badge__dot" />Relevance filtering · off</span>
+              </header>
+
+              <form onSubmit={run}>
+                <div className="field">
+                  <label className="field__label" htmlFor="q">Research query</label>
+                  <div className="field__input">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ color: 'var(--fg-3)', flexShrink: 0 }}>
+                      <circle cx="6" cy="6" r="4" stroke="currentColor" strokeWidth="1.4"/>
+                      <path d="M9 9 L12 12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                    </svg>
+                    <input
+                      id="q"
+                      type="text"
+                      value={query}
+                      onChange={e => setQuery(e.target.value)}
+                      placeholder="What do you want to research?"
+                      minLength={3}
+                      required
+                    />
+                    <kbd className="field__kbd">⌘↵</kbd>
+                  </div>
+                  <div className="field__sug">
+                    <span className="meta" style={{ marginRight: 8 }}>Try</span>
+                    {SUGGESTED.map(s => (
+                      <button type="button" key={s} className="sug" onClick={() => setQuery(s)}>{s}</button>
+                    ))}
+                  </div>
                 </div>
 
-                {/* Auto-attach result */}
-                {attachResult ? (
-                  <div className={`flex items-start justify-between gap-3 px-3 py-2 rounded-lg text-sm font-medium mb-3 ${attachResult.merged ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700'}`}>
-                    <div className="flex items-start gap-2 flex-1">
-                      <span>{attachResult.merged ? '🔀' : '✓'}</span>
-                      <span>{attachResult.message}</span>
-                    </div>
-                    {isAuthenticated && attachResult.card_id && (
-                      <AddToFeedBtn cardId={attachResult.card_id} />
+                {error && <p style={{ color: 'var(--signal-critical)', fontSize: 'var(--t-meta)', margin: '12px 0 0' }}>{error}</p>}
+
+                <div className="panel__foot">
+                  <div className="panel__budget">
+                    <span className="eyebrow">Cost estimate</span>
+                    <span className="panel__budgetVal">
+                      <span className="mono">2</span> LLM calls
+                      <span className="panel__budgetSep">·</span>
+                      <span className="mono">~0.04</span> USD
+                      <span className="panel__budgetSep">·</span>
+                      <span className="mono">~90s</span>
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {loading && (
+                      <button type="button" onClick={cancelResearch} className="btn">
+                        <svg width="10" height="10" viewBox="0 0 10 10"><rect x="2" y="2" width="6" height="6" fill="currentColor" rx="1"/></svg>
+                        Stop
+                      </button>
                     )}
+                    <button type="submit" disabled={loading} className={`btn btn--primary btn--lg ${loading ? 'is-running' : ''}`} style={{ opacity: loading ? 0.7 : 1 }}>
+                      {loading ? (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="3" y="3" width="6" height="6" fill="currentColor" rx="1"/></svg>
+                          Browsing the web...
+                        </>
+                      ) : (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 3 L11 7 L4 11 Z" fill="currentColor"/></svg>
+                          Run live browser research
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </section>
+
+            {/* Live browser viewport */}
+            {(loading || liveScreenshot) && (
+              <section style={{
+                background: 'var(--bg-1)', borderRadius: 'var(--r-lg)',
+                border: '1px solid var(--line-2)', overflow: 'hidden',
+              }}>
+                {/* Browser chrome */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px',
+                  background: 'var(--bg-2)', borderBottom: '1px solid var(--line-1)',
+                }}>
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--signal-critical)', opacity: 0.8 }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--signal-warn)', opacity: 0.8 }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--signal-positive)', opacity: 0.8 }} />
+                  </div>
+                  <div style={{
+                    flex: 1, margin: '0 8px', padding: '4px 12px', borderRadius: 'var(--r-md)',
+                    background: 'var(--bg-3)', fontFamily: 'var(--font-mono)', fontSize: 'var(--t-micro)',
+                    color: 'var(--fg-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    {loading && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', animation: 'step-pulse 1.5s ease-in-out infinite', flexShrink: 0 }} />}
+                    {currentUrl || 'about:blank'}
+                  </div>
+                  <span style={{ fontSize: 'var(--t-micro)', fontWeight: 600, color: loading ? 'var(--signal-warn)' : 'var(--signal-positive)' }}>
+                    {loading ? 'Browsing...' : 'Done'}
+                  </span>
+                </div>
+                {/* Viewport */}
+                <div style={{ position: 'relative', background: 'var(--bg-2)', minHeight: 200 }}>
+                  {liveScreenshot ? (
+                    <img
+                      src={`data:image/jpeg;base64,${liveScreenshot}`}
+                      alt="Live browser view"
+                      style={{ width: '100%', display: 'block' }}
+                    />
+                  ) : (
+                    <div className="empty" style={{ minHeight: 200 }}>
+                      <div style={{ width: 32, height: 32, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                      <span className="meta">Launching browser...</span>
+                    </div>
+                  )}
+                  {loading && liveScreenshot && (
+                    <div style={{
+                      position: 'absolute', bottom: 12, right: 12,
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      background: 'rgba(0,0,0,0.6)', padding: '4px 12px',
+                      borderRadius: 'var(--r-pill)', backdropFilter: 'blur(4px)',
+                      fontSize: 'var(--t-micro)', fontWeight: 600, color: 'var(--fg-1)',
+                    }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--signal-critical)', animation: 'step-pulse 1.5s ease-in-out infinite' }} />
+                      LIVE
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {/* Live feed panel */}
+            <section className="panel">
+              <header className="panel__head">
+                <div>
+                  <h2 className="panel__title">Live research feed</h2>
+                  <p className="panel__sub">
+                    {loading ? 'Streaming steps as the browser runs.' : processingLog.length ? 'Run complete.' : 'No run yet. Start browser research to see the live step-by-step feed.'}
+                  </p>
+                </div>
+                <span className={`badge ${streamPhase === 'streaming' ? 'badge--live' : streamPhase === 'done' ? 'badge--info' : 'badge--idle'}`}>
+                  <span className={`pulse ${streamPhase === 'streaming' ? 'pulse--live' : 'pulse--steady'}`}><span className="pulse__ring"/><span className="pulse__core"/></span>
+                  {streamPhase === 'streaming' ? 'Running' : streamPhase === 'done' ? 'Complete' : streamPhase === 'error' ? 'Error' : 'Idle'}
+                </span>
+              </header>
+
+              {processingLog.length === 0 ? (
+                <div className="empty">
+                  <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ color: 'var(--fg-4)' }}>
+                    <circle cx="20" cy="20" r="14" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3"/>
+                    <path d="M14 20 L18 24 L26 16" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <p className="empty__text">When a run starts, you'll see planner decisions, source discovery, and synthesis progress in real time.</p>
+                </div>
+              ) : (
+                <div style={{
+                  background: 'var(--bg-0)', border: '1px solid var(--line-1)',
+                  borderRadius: 'var(--r-md)', padding: 16,
+                  fontFamily: 'var(--font-mono)', fontSize: 'var(--t-micro)',
+                  maxHeight: 280, overflowY: 'auto',
+                  display: 'flex', flexDirection: 'column', gap: 2,
+                }}>
+                  {streamPhase === 'streaming' && (
+                    <div style={{ color: 'var(--signal-warn)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <span style={{ animation: 'step-pulse 1.5s ease-in-out infinite' }}>▶</span>
+                      Research in progress — streaming live steps below
+                    </div>
+                  )}
+                  {processingLog.map((line, idx) => {
+                    const isArrow = line.includes('  →');
+                    const isError = line.toLowerCase().includes('error');
+                    const isDone = line.toLowerCase().includes('done') || line.toLowerCase().includes('complete');
+                    return (
+                      <div key={`${line}-${idx}`} style={{
+                        lineHeight: 1.6,
+                        color: isError ? 'var(--signal-critical)' : isDone ? 'var(--signal-positive)' : isArrow ? 'var(--fg-3)' : 'var(--accent)',
+                        paddingLeft: isArrow ? 16 : 0,
+                      }}>
+                        {isArrow ? '' : '› '}{line}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
+
+          {/* Right sidebar */}
+          <aside className="custom__right">
+            <section className="panel panel--compact">
+              <h2 className="panel__title" style={{ marginBottom: 12 }}>Sources</h2>
+              <ul className="sources">
+                <li className="src is-on"><span className="src__glyph">R</span><span className="src__name">Reddit</span><span className="meta">dynamic</span></li>
+                <li className="src is-on"><span className="src__glyph">Y</span><span className="src__name">YouTube</span><span className="meta">dynamic</span></li>
+                <li className="src is-on"><span className="src__glyph">G</span><span className="src__name">Google News</span><span className="meta">scrape</span></li>
+                <li className="src"><span className="src__glyph">X</span><span className="src__name">X / Twitter</span><span className="meta">beta</span></li>
+                <li className="src"><span className="src__glyph">H</span><span className="src__name">HN / Lobsters</span><span className="meta">beta</span></li>
+              </ul>
+            </section>
+
+            <section className="panel panel--compact">
+              <h2 className="panel__title" style={{ marginBottom: 12 }}>Recent runs</h2>
+              {history.length === 0 ? (
+                <p className="meta" style={{ padding: '8px 0' }}>No runs yet.</p>
+              ) : (
+                <ul className="history">
+                  {history.slice(0, 5).map((h) => (
+                    <li key={h.run_id} className="hist" style={{ cursor: 'pointer' }} onClick={() => openRun(h.run_id)}>
+                      <span className="hist__q">{h.query}</span>
+                      <span className="hist__meta mono">{h.total_blogs} cards</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button onClick={() => navigate('/profile')} className="panel__link">View full history →</button>
+            </section>
+          </aside>
+        </div>
+
+        {/* Results */}
+        {data && (
+          <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Global Feed status */}
+            {streamPhase === 'done' && (
+              <div className="panel" style={{ borderColor: 'rgba(139,196,138,0.3)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                  <h2 style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>Global Feed</h2>
+                  <button onClick={() => navigate('/')} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--t-meta)', fontWeight: 500 }}>View Home Feed →</button>
+                </div>
+
+                {attachResult ? (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                    padding: '10px 16px', borderRadius: 'var(--r-md)',
+                    background: attachResult.merged ? 'var(--accent-soft)' : 'rgba(139,196,138,0.12)',
+                    border: `1px solid ${attachResult.merged ? 'rgba(127,212,209,0.2)' : 'rgba(139,196,138,0.2)'}`,
+                    marginBottom: 12,
+                  }}>
+                    <span style={{ fontSize: 'var(--t-meta)', fontWeight: 500, color: attachResult.merged ? 'var(--accent)' : 'var(--signal-positive)' }}>
+                      {attachResult.merged ? '🔀' : '✓'} {attachResult.message}
+                    </span>
+                    {isAuthenticated && attachResult.card_id && <AddToFeedBtn cardId={attachResult.card_id} />}
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 text-xs text-secondary-400 dark:text-gray-500 mb-3">
-                    <div className="w-3 h-3 border border-secondary-300 border-t-transparent rounded-full animate-spin" />
-                    Attaching to Global Feed...
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <div style={{ width: 12, height: 12, border: '1.5px solid var(--fg-3)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                    <span className="meta">Attaching to Global Feed...</span>
                   </div>
                 )}
 
-                {/* Optional: override domain/subcategory for categorization */}
-                <details className="group">
-                  <summary className="cursor-pointer text-xs font-semibold text-secondary-500 dark:text-gray-400 hover:text-secondary-700 dark:hover:text-gray-200 select-none">
+                {/* Override domain */}
+                <details>
+                  <summary style={{ cursor: 'pointer', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--fg-3)' }}>
                     Override domain / category (optional)
                   </summary>
-                  <div className="mt-3 space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="sm:col-span-1">
-                        <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Card Title</label>
-                        <input
-                          type="text"
-                          value={cardTitle}
-                          onChange={(e) => setCardTitle(e.target.value)}
-                          className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white"
-                        />
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                      <div className="field">
+                        <label className="field__label">Card Title</label>
+                        <div className="field__input">
+                          <input type="text" value={cardTitle} onChange={(e) => setCardTitle(e.target.value)} />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Domain</label>
-                        <select
-                          value={cardDomain}
-                          onChange={(e) => { setCardDomain(e.target.value); setCardSubdomain(''); }}
-                          className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white"
-                        >
-                          <option value="">— Select domain —</option>
-                          {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+                      <div className="field">
+                        <label className="field__label">Domain</label>
+                        <select value={cardDomain} onChange={(e) => { setCardDomain(e.target.value); setCardSubdomain(''); }}
+                          style={{
+                            width: '100%', padding: '10px 14px', background: 'var(--bg-2)',
+                            border: '1px solid var(--line-1)', borderRadius: 'var(--r-md)',
+                            color: 'var(--fg-1)', fontSize: 'var(--t-body)', fontFamily: 'var(--font-sans)',
+                          }}>
+                          <option value="">— Select —</option>
+                          {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
                       </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-secondary-600 dark:text-gray-300 mb-1">Subcategory</label>
-                        <select
-                          value={cardSubdomain}
-                          onChange={(e) => setCardSubdomain(e.target.value)}
-                          disabled={!cardDomain}
-                          className="w-full rounded-lg border border-secondary-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-secondary-900 dark:text-white disabled:opacity-50"
-                        >
-                          <option value="">— Select subcategory —</option>
+                      <div className="field">
+                        <label className="field__label">Subcategory</label>
+                        <select value={cardSubdomain} onChange={(e) => setCardSubdomain(e.target.value)} disabled={!cardDomain}
+                          style={{
+                            width: '100%', padding: '10px 14px', background: 'var(--bg-2)',
+                            border: '1px solid var(--line-1)', borderRadius: 'var(--r-md)',
+                            color: 'var(--fg-1)', fontSize: 'var(--t-body)', fontFamily: 'var(--font-sans)',
+                            opacity: cardDomain ? 1 : 0.5,
+                          }}>
+                          <option value="">— Select —</option>
                           {subdominOptions.map((code) => <option key={code} value={code}>{SUBCATEGORY_LABELS[code]}</option>)}
                         </select>
                       </div>
                     </div>
-                    {saveError && <p className="text-xs text-red-600 dark:text-red-400">{saveError}</p>}
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <button
-                        onClick={saveAsCard}
-                        disabled={saving || !isAuthenticated}
-                        className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white disabled:opacity-60 transition-colors"
-                      >
+                    {saveError && <p style={{ color: 'var(--signal-critical)', fontSize: 'var(--t-meta)' }}>{saveError}</p>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <button onClick={saveAsCard} disabled={saving || !isAuthenticated} className="btn btn--primary" style={{ opacity: saving ? 0.6 : 1 }}>
                         {saving ? 'Saving...' : savedCardId ? '✓ Saved' : 'Save with this category'}
                       </button>
-                      {!isAuthenticated && <p className="text-xs text-secondary-500 dark:text-gray-400">Sign in to pin this to your personal feed.</p>}
+                      {!isAuthenticated && <span className="meta">Sign in to pin this to your personal feed.</span>}
                     </div>
                   </div>
                 </details>
               </div>
             )}
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-transparent dark:border-gray-700">
-              <p className="text-sm text-secondary-700 dark:text-gray-300">Total blogs: <span className="font-semibold">{data.total_blogs}</span></p>
-              <p className="text-sm text-secondary-700 dark:text-gray-300 mt-1">Reddit communities: {data.selected_reddit_communities.join(', ')}</p>
-              <p className="text-sm text-secondary-700 dark:text-gray-300 mt-1">YouTube channels: {data.youtube_channels_used.join(', ')}</p>
-              {data.llm_usage ? (
-                <p className="text-sm text-secondary-700 dark:text-gray-300 mt-1">
-                  LLM usage this run: {fmtInt(data.llm_usage.total_tokens)} tokens, estimated {fmtUsd(data.llm_usage.estimated_cost_usd)}
-                </p>
-              ) : null}
+            {/* Run stats */}
+            <div className="panel">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, fontSize: 'var(--t-meta)', color: 'var(--fg-2)' }}>
+                <span>Total blogs: <strong style={{ color: 'var(--fg-1)' }}>{data.total_blogs}</strong></span>
+                <span>Reddit: <strong style={{ color: 'var(--fg-1)' }}>{data.selected_reddit_communities?.join(', ') || 'none'}</strong></span>
+                <span>YouTube: <strong style={{ color: 'var(--fg-1)' }}>{data.youtube_channels_used?.join(', ') || 'none'}</strong></span>
+                {data.llm_usage && (
+                  <span className="mono">
+                    {fmtInt(data.llm_usage.total_tokens)} tokens · {fmtUsd(data.llm_usage.estimated_cost_usd)}
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4 border border-transparent dark:border-gray-700 flex flex-wrap gap-2">
+            {/* Source filter */}
+            <div style={{ display: 'flex', gap: 4 }}>
               {['all', 'reddit', 'youtube', 'news'].map((f) => (
                 <button
                   key={f}
                   onClick={() => setSourceFilter(f)}
-                  className={`px-3 py-2 rounded-lg text-sm font-semibold uppercase ${sourceFilter === f ? 'bg-primary-600 text-white' : 'bg-secondary-100 dark:bg-gray-700 text-secondary-700 dark:text-gray-200'}`}
+                  className={`fchip ${sourceFilter === f ? 'is-on' : ''}`}
+                  style={{ textTransform: 'uppercase', fontWeight: 600 }}
                 >
                   {f}
                 </button>
               ))}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {/* Blog cards grid */}
+            <div className="grid">
               {blogs.map((b, idx) => {
                 const key = `${b.source}-${idx}-${b.url}`;
                 const isExpanded = !!expanded[key];
                 const summary = compact(b.summary || '');
                 const shownSummary = isExpanded ? (b.summary || '') : summary.text;
 
+                const sourceColor = b.source === 'reddit' ? '#E8913C' : b.source === 'youtube' ? 'var(--signal-critical)' : 'var(--accent)';
+                const sourceBg = b.source === 'reddit' ? 'rgba(232,145,60,0.12)' : b.source === 'youtube' ? 'rgba(240,110,110,0.12)' : 'var(--accent-soft)';
+
                 return (
-                <article key={key} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border border-transparent dark:border-gray-700 h-full flex flex-col">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-1 rounded text-xs font-bold uppercase bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200">{b.source}</span>
-                    {b.community ? <span className="text-xs text-secondary-500 dark:text-gray-400">r/{b.community}</span> : null}
-                    {b.channel ? <span className="text-xs text-secondary-500 dark:text-gray-400">{b.channel}</span> : null}
-                  </div>
-                  <h3 className="text-base font-semibold text-secondary-900 dark:text-white leading-snug">{b.title}</h3>
-                  <p className="mt-2 text-sm text-secondary-700 dark:text-gray-300 whitespace-pre-wrap">{shownSummary}</p>
-                  {summary.truncated ? (
-                    <button
-                      onClick={() => toggleExpand(key)}
-                      className="mt-2 self-start text-xs font-semibold text-primary-700 dark:text-primary-300 hover:underline"
-                    >
-                      {isExpanded ? 'Show less' : 'Read more'}
-                    </button>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap gap-3 text-xs text-secondary-500 dark:text-gray-400">
-                    {typeof b.relevance_score === 'number' ? <span>match: {Math.round((b.relevance_score || 0) * 100)}%</span> : null}
-                    {typeof b.score === 'number' ? <span>upvotes: {b.score}</span> : null}
-                    {typeof b.comments === 'number' ? <span>comments: {b.comments}</span> : null}
-                  </div>
-                  {b.url ? (
-                    <a href={b.url} target="_blank" rel="noreferrer" className="mt-4 inline-block text-sm font-semibold text-primary-700 dark:text-primary-300 hover:underline">
-                      Open source
-                    </a>
-                  ) : null}
-                </article>
-              )})}
+                  <article key={key} className="card" style={{ gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        padding: '2px 8px', borderRadius: 'var(--r-sm)',
+                        fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                        background: sourceBg, color: sourceColor,
+                      }}>{b.source}</span>
+                      {b.community && <span className="meta">r/{b.community}</span>}
+                      {b.channel && <span className="meta">{b.channel}</span>}
+                    </div>
+                    <h3 style={{ fontSize: 'var(--t-body)', fontWeight: 700, color: 'var(--fg-1)', lineHeight: 1.4, margin: 0 }}>{b.title}</h3>
+                    <p style={{ fontSize: 'var(--t-meta)', color: 'var(--fg-2)', lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{shownSummary}</p>
+                    {summary.truncated && (
+                      <button onClick={() => toggleExpand(key)} style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: 'var(--accent)', fontSize: 'var(--t-meta)', fontWeight: 500, padding: 0,
+                      }}>
+                        {isExpanded ? 'Show less' : 'Read more'}
+                      </button>
+                    )}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 'var(--t-micro)', color: 'var(--fg-3)' }}>
+                      {typeof b.relevance_score === 'number' && <span>match: {Math.round((b.relevance_score || 0) * 100)}%</span>}
+                      {typeof b.score === 'number' && <span>↑{b.score}</span>}
+                      {typeof b.comments === 'number' && <span>{b.comments} comments</span>}
+                    </div>
+                    {b.url && (
+                      <a href={b.url} target="_blank" rel="noreferrer" style={{
+                        color: 'var(--accent)', fontSize: 'var(--t-meta)', fontWeight: 500, textDecoration: 'none',
+                      }}>
+                        Open source →
+                      </a>
+                    )}
+                  </article>
+                );
+              })}
             </div>
-          </section>
-        ) : null}
+          </div>
+        )}
       </main>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

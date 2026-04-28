@@ -1,39 +1,47 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowUpRight, Cpu, Globe2, Users } from 'lucide-react';
 import { feedCardsApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORIES, DOMAIN_COLORS, SUBCATEGORY_LABELS, formatTimeAgo } from '@/utils/helpers';
-import { cn } from '@/utils/helpers';
 
-const ACCENT_TOP = {
-  POL: 'bg-blue-500',
-  ECO: 'bg-emerald-500',
-  BUS: 'bg-violet-500',
-  TEC: 'bg-orange-500',
-  OTH: 'bg-gray-400',
+const DOMAIN_CSS = {
+  POL: 'var(--domain-policy)',
+  ECO: 'var(--domain-econ)',
+  BUS: 'var(--domain-biz)',
+  TEC: 'var(--domain-tech)',
+  OTH: 'var(--domain-others)',
 };
 
-const DNA_BADGE = {
-  POL: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:ring-blue-700',
-  ECO: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:ring-emerald-700',
-  BUS: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:ring-violet-700',
-  TEC: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:ring-orange-700',
-  OTH: 'bg-gray-50 text-gray-600 ring-1 ring-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:ring-gray-600',
-};
+function ConfidenceBar({ value = 60 }) {
+  const filled = Math.round((value || 60) / 20);
+  return (
+    <div className="conf" title={`Signal strength ${value}`}>
+      {[...Array(5)].map((_, i) => (
+        <span key={i} className={`conf__tick ${i < filled ? 'is-on' : ''}`} />
+      ))}
+    </div>
+  );
+}
 
-const TYPE_BADGE = {
-  domain: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
-  custom: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300',
-};
+function SourcePips({ sources = [] }) {
+  const items = sources.slice(0, 4);
+  return (
+    <div className="pips">
+      {items.map((s, i) => (
+        <span className="pip" key={i} title={s}>{(s || '').slice(0, 2)}</span>
+      ))}
+      {sources.length > 4 && <span className="pip pip--more">+{sources.length - 4}</span>}
+    </div>
+  );
+}
 
-export default function FeedCard({ card, isPinned = false, onPin, onUnpin }) {
+export default function FeedCard({ card, isPinned = false, onPin, onUnpin, reason }) {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [pinning, setPinning] = useState(false);
 
-  const colors = DOMAIN_COLORS[card.domain] || DOMAIN_COLORS.OTH;
   const category = CATEGORIES.find((c) => c.id === card.domain);
+  const accentColor = DOMAIN_CSS[card.domain] || DOMAIN_CSS.OTH;
 
   const dnaCode = card.domain
     ? card.subdomain && card.subdomain !== 'OTH'
@@ -60,99 +68,99 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin }) {
     }
   };
 
+  const isDomain = card.type === 'domain';
+
   return (
-    <div
+    <article
       onClick={() => navigate(`/feed/${card.id}`)}
-      className={cn(
-        'group relative bg-white dark:bg-gray-800 rounded-2xl overflow-hidden cursor-pointer',
-        'border border-gray-100 dark:border-gray-700/80',
-        'shadow-sm hover:shadow-xl hover:-translate-y-0.5',
-        'transition-all duration-200 ease-out flex flex-col',
-      )}
+      className={`card ${isDomain ? 'card--domain' : 'card--research'}`}
+      style={isDomain ? { '--cardAccent': accentColor } : undefined}
     >
-      {/* Domain color accent bar */}
-      <div className={cn('h-[3px] w-full flex-shrink-0', ACCENT_TOP[card.domain] || 'bg-gray-300 dark:bg-gray-600')} />
+      {isDomain && <div className="card__spine" />}
 
-      <div className="p-4 flex flex-col flex-1 gap-2.5">
-        {/* Top row: type badge + DNA code */}
-        <div className="flex items-center justify-between gap-2">
-          <span className={cn('inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide', TYPE_BADGE[card.type] || TYPE_BADGE.custom)}>
-            {card.type === 'domain'
-              ? <><Globe2 className="h-3 w-3" /> Domain</>
-              : <><Cpu className="h-3 w-3" /> Research</>}
-          </span>
-          {dnaCode && (
-            <span className={cn('font-mono text-[11px] font-bold px-2 py-0.5 rounded-md', DNA_BADGE[card.domain] || DNA_BADGE.OTH)}>
-              {dnaCode}
-            </span>
+      {/* Recommendation reason badge */}
+      {reason && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          fontSize: 'var(--t-micro)', color: 'var(--accent)', fontWeight: 500,
+          marginBottom: 4,
+        }}>
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+            <path d="M6 1 L7.5 4.5 L11 5 L8.5 7.5 L9 11 L6 9.5 L3 11 L3.5 7.5 L1 5 L4.5 4.5Z" stroke="currentColor" strokeWidth="1.2" fill="none"/>
+          </svg>
+          {reason}
+        </div>
+      )}
+
+      {/* Header */}
+      <header className="card__head">
+        <span className="card__kind">
+          {isDomain ? (
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1.5" y="1.5" width="7" height="7" rx="1.2" stroke="currentColor" strokeWidth="1.2"/><path d="M3.5 5 h3 M3.5 7 h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+          ) : (
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="4" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.2"/><path d="M6 6 L8.5 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
           )}
+          {isDomain ? 'Domain' : 'Research'}
+        </span>
+        {dnaCode && <span className="tag tag--code">{dnaCode}</span>}
+      </header>
+
+      {/* Title */}
+      <h3 className="card__title" style={{ fontSize: 'var(--t-body)', lineHeight: 1.4 }}>
+        {card.title}
+      </h3>
+
+      {/* Summary */}
+      {card.description && (
+        <p className="card__summary" style={{ fontSize: 'var(--t-meta)' }}>
+          {card.description}
+        </p>
+      )}
+
+      {/* Domain chip */}
+      {category && (
+        <div className="card__chips">
+          <span className="chip chip--tiny" style={{ '--chipColor': accentColor }}>
+            <span className="chip__dot" />
+            {category.name}
+          </span>
         </div>
+      )}
 
-        {/* Title */}
-        <h3 className="text-sm font-bold text-gray-900 dark:text-white leading-snug line-clamp-2 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-          {card.title}
-        </h3>
+      {/* Footer */}
+      <footer className="card__foot">
+        <SourcePips sources={card.sources || (card.source ? [card.source] : ['web'])} />
+        <span className="card__meta">
+          <ConfidenceBar value={card.signal_strength || 60} />
+          <time className="meta">{card.created_at ? formatTimeAgo(card.created_at) : ''}</time>
+        </span>
 
-        {/* Description */}
-        {card.description && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed">
-            {card.description}
-          </p>
-        )}
-
-        <div className="flex-1" />
-
-        {/* Footer */}
-        <div className="flex items-center justify-between pt-2.5 border-t border-gray-100 dark:border-gray-700/60">
-          <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-            {category && (
-              <span className={cn('font-semibold', colors.text)}>
-                {category.icon} {category.name}
-              </span>
-            )}
-            {card.created_at && (
-              <>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span>{formatTimeAgo(card.created_at)}</span>
-              </>
-            )}
-            {card.pinned_count > 0 && (
-              <>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="inline-flex items-center gap-0.5">
-                  <Users className="h-3 w-3" />
-                  {card.pinned_count}
-                </span>
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-            {isAuthenticated && (
-              isPinned ? (
-                <button
-                  onClick={handlePin}
-                  disabled={pinning}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-700 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-700 transition-all"
-                >
-                  {pinning ? '...' : '✓ Saved'}
-                </button>
-              ) : (
-                <button
-                  onClick={handlePin}
-                  disabled={pinning}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-primary-50 dark:hover:bg-primary-900/30 hover:text-primary-600 dark:hover:text-primary-400 hover:border-primary-300 dark:hover:border-primary-600 transition-all"
-                >
-                  {pinning ? '...' : '+ Add to My Feed'}
-                </button>
-              )
-            )}
-            <span className="p-1.5 rounded-lg text-gray-300 dark:text-gray-600 group-hover:text-primary-500 group-hover:bg-primary-50 dark:group-hover:bg-primary-900/20 transition-all">
-              <ArrowUpRight className="h-3.5 w-3.5" />
-            </span>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+          {isAuthenticated && (
+            <button
+              onClick={handlePin}
+              disabled={pinning}
+              className="btn"
+              style={{
+                padding: '3px 10px',
+                fontSize: 'var(--t-micro)',
+                ...(isPinned ? {
+                  background: 'var(--accent-soft)',
+                  color: 'var(--accent)',
+                  borderColor: 'rgba(127,212,209,0.2)',
+                } : {})
+              }}
+            >
+              {pinning ? '...' : isPinned ? 'Saved' : '+ Save'}
+            </button>
+          )}
+          <button className="card__go" aria-label="Open card">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M4 10 L10 4 M10 4 H5.5 M10 4 V8.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
         </div>
-      </div>
-    </div>
+      </footer>
+    </article>
   );
 }
