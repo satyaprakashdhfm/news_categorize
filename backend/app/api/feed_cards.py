@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_optional_user
 from app.models.feed_card import FeedCard, UserFeedCard
 from app.models.user import User
 
@@ -222,7 +222,8 @@ def create_card(
     if payload.type == "custom" and not payload.run_id:
         raise HTTPException(status_code=400, detail="run_id required for custom cards")
 
-    is_global = True if payload.type == "custom" else (payload.is_global if current_user.role == "admin" else False)
+    # Custom cards are private by default; only admins can set global
+    is_global = payload.is_global if current_user.role == "admin" else False
 
     card = FeedCard(
         id=str(uuid.uuid4()),
@@ -354,6 +355,25 @@ def unpin_card(
     db.commit()
 
 
+# ── User's own created cards (private) ────────────────────────────────────────
+
+@router.get("/my/cards", response_model=FeedCardListResponse)
+def get_my_created_cards(
+    domain: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get cards created by the current user (their own research)."""
+    q = db.query(FeedCard).filter(FeedCard.created_by == current_user.id)
+    if domain:
+        q = q.filter(FeedCard.domain == domain.upper())
+    total = q.count()
+    cards = q.order_by(FeedCard.updated_at.desc()).offset(offset).limit(limit).all()
+    return FeedCardListResponse(cards=cards, total=total)
+
+
 # ── Attach run to existing or new card ──────────────────────────────────────
 # Called automatically by the frontend after every research run completes.
 # Merge logic:
@@ -362,7 +382,11 @@ def unpin_card(
 #   3. No match → create a new global custom card
 
 @router.post("/attach-run", response_model=AttachRunResponse)
-def attach_run(payload: AttachRunRequest, db: Session = Depends(get_db)):
+def attach_run(
+    payload: AttachRunRequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
     # Case 1: domain+subdomain given → always link to the DOMAIN card (never create a parallel custom card)
     if payload.domain and payload.subdomain:
         domain_card = (
@@ -390,12 +414,13 @@ def attach_run(payload: AttachRunRequest, db: Session = Depends(get_db)):
             domain=payload.domain.upper(),
             subdomain=payload.subdomain.upper(),
             run_id=payload.run_id,
-            is_global=True,
+            created_by=current_user.id if current_user else None,
+            is_global=False,  # user-created cards are private
         )
         db.add(card)
         db.commit()
         db.refresh(card)
-        return AttachRunResponse(merged=False, card_id=card.id, message="Created new card (no domain card found)")
+        return AttachRunResponse(merged=False, card_id=card.id, message="Created new card (private)")
 
     # Case 2: user research — use AI to check if query matches any existing card's topic
     query_norm = payload.query.strip().lower()
@@ -433,12 +458,13 @@ def attach_run(payload: AttachRunRequest, db: Session = Depends(get_db)):
         domain=(payload.domain.upper() if payload.domain else auto_domain),
         subdomain=(payload.subdomain.upper() if payload.subdomain else auto_subdomain),
         run_id=payload.run_id,
-        is_global=True,
+        created_by=current_user.id if current_user else None,
+        is_global=False,  # user-created cards are private
     )
     db.add(card)
     db.commit()
     db.refresh(card)
-    return AttachRunResponse(merged=False, card_id=card.id, message="Created new card in Global Feed")
+    return AttachRunResponse(merged=False, card_id=card.id, message="Created new card (private to your feed)")
 
 
 # ── Admin: seed predefined domain cards ─────────────────────────────────────

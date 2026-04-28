@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -13,6 +13,7 @@ class User(Base):
     name = Column(String(256), nullable=False)
     password_hash = Column(String(512), nullable=False)
     role = Column(String(16), nullable=False, default="user")  # 'user' | 'admin'
+    interests = Column(JSON, nullable=True, default=list)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
     feed_cards = relationship("FeedCard", back_populates="creator", foreign_keys="FeedCard.created_by")

@@ -7,6 +7,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     name: str
     password: str
+    interests: Optional[list[str]] = None
 
 
 class LoginRequest(BaseModel):
@@ -24,7 +25,12 @@ class UserResponse(BaseModel):
     email: str
     name: str
     role: str
+    interests: Optional[list[str]] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class UpdateInterestsRequest(BaseModel):
+    interests: list[str]  # e.g. ["POL", "TEC", "ECO"]

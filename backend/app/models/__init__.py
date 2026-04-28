@@ -6,6 +6,7 @@ from app.models.custom_agent_feed import CustomAgentFeedArticle
 from app.models.custom_youtube_video import CustomYouTubeVideo
 from app.models.custom_reddit_post import CustomRedditPost
 from app.models.browser_research_run import BrowserResearchRun, BrowserResearchItem, BrowserResearchRunMetric
+from app.models.recommendation import UserRecommendation
 
 __all__ = [
     "User",
@@ -21,4 +22,5 @@ __all__ = [
     "BrowserResearchRun",
     "BrowserResearchItem",
     "BrowserResearchRunMetric",
+    "UserRecommendation",
 ]
