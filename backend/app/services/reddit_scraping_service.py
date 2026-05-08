@@ -19,9 +19,8 @@ class RedditScrapingService:
 
     def _init_summary_client(self) -> None:
         try:
-            from google import genai
-
-            self._client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+            from app.core.ollama_client import get_llm_client
+            self._client = get_llm_client()
         except Exception as exc:
             self._client = None
             logger.warning(f"[REDDIT] Summary client unavailable: {exc}")
@@ -109,7 +108,7 @@ class RedditScrapingService:
         )
         try:
             response = self._client.models.generate_content(
-                model=settings.GEMINI_MODEL,
+                model=settings.OLLAMA_MODEL if settings.USE_OLLAMA else settings.GEMINI_MODEL,
                 contents=prompt,
             )
             text = self._extract_response_text(response)
@@ -123,7 +122,7 @@ class RedditScrapingService:
                     f"Draft summary:\n{text}"
                 )
                 expand_response = self._client.models.generate_content(
-                    model=settings.GEMINI_MODEL,
+                    model=settings.OLLAMA_MODEL if settings.USE_OLLAMA else settings.GEMINI_MODEL,
                     contents=expand_prompt,
                 )
                 expanded_text = self._extract_response_text(expand_response)

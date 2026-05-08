@@ -16,24 +16,24 @@ logger = logging.getLogger(__name__)
 
 
 def _ai_same_topic(query_a: str, query_b: str) -> bool:
-    """Ask Gemini whether two research queries are about the same core topic."""
+    """Ask LLM whether two research queries are about the same core topic."""
     try:
-        from google import genai
-        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        from app.core.ollama_client import get_llm_client, get_active_model
+        client = get_llm_client()
         prompt = (
             "Are these two research queries about the same core topic? "
             "Answer ONLY with JSON, no other text: {\"same\": true} or {\"same\": false}\n\n"
             f'Query A: "{query_a}"\n'
             f'Query B: "{query_b}"'
         )
-        response = client.models.generate_content(model=settings.GEMINI_MODEL, contents=prompt)
+        response = client.models.generate_content(model=get_active_model(), contents=prompt)
         text = (response.text or "").strip()
         match = re.search(r'\{[^}]+\}', text)
         if match:
             data = json.loads(match.group())
             return bool(data.get("same", False))
     except Exception as exc:
-        logger.warning(f"[AI_SIMILARITY] Gemini call failed: {exc}")
+        logger.warning(f"[AI_SIMILARITY] LLM call failed: {exc}")
     return False
 
 
@@ -73,10 +73,10 @@ _SUBDOMAIN_DESCRIPTIONS = {
 
 
 def _ai_classify_domain(query: str) -> tuple[str | None, str | None]:
-    """Use Gemini to classify a free-form research query into a domain+subdomain."""
+    """Use LLM to classify a free-form research query into a domain+subdomain."""
     try:
-        from google import genai
-        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        from app.core.ollama_client import get_llm_client, get_active_model
+        client = get_llm_client()
         domain_lines = "\n".join(f'  "{d}": {desc}' for d, desc in _DOMAIN_DESCRIPTIONS.items())
         subdomain_lines = "\n".join(f'  "{s}": {desc}' for s, desc in _SUBDOMAIN_DESCRIPTIONS.items())
         prompt = (
@@ -87,7 +87,7 @@ def _ai_classify_domain(query: str) -> tuple[str | None, str | None]:
             f"Domains:\n{domain_lines}\n\n"
             f"Subdomains:\n{subdomain_lines}"
         )
-        response = client.models.generate_content(model=settings.GEMINI_MODEL, contents=prompt)
+        response = client.models.generate_content(model=get_active_model(), contents=prompt)
         text = (response.text or "").strip()
         match = re.search(r'\{[^}]+\}', text)
         if match:
@@ -98,7 +98,7 @@ def _ai_classify_domain(query: str) -> tuple[str | None, str | None]:
                 valid_sub = subdomain if subdomain in _DOMAIN_MAP.get(domain, []) else None
                 return domain, valid_sub
     except Exception as exc:
-        logger.warning(f"[AI_CLASSIFY] Gemini call failed: {exc}")
+        logger.warning(f"[AI_CLASSIFY] LLM call failed: {exc}")
     return None, None
 from app.schemas.feed_card import (
     AttachRunRequest,

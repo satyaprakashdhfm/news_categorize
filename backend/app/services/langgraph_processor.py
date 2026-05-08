@@ -1,8 +1,8 @@
 from typing import Optional, TypedDict
-from google import genai
 from langgraph.graph import StateGraph, END
 from app.core.config import settings
 from app.core.observability import get_langfuse
+from app.core.ollama_client import get_llm_client, get_active_model
 import logging
 import time
 
@@ -29,10 +29,10 @@ class NewsProcessorGraph:
     
     def __init__(self):
         """Initialize the news processor with Gemini and optional Langfuse tracing"""
-        self.client = genai.Client(api_key=settings.GOOGLE_API_KEY)
-        self.model = settings.GEMINI_MODEL
+        self.client = get_llm_client()
+        self.model = get_active_model()
         self.graph = self._build_graph()
-        logger.info("[LANGGRAPH] NewsProcessor initialized with Gemini")
+        logger.info(f"[LANGGRAPH] NewsProcessor initialized with model={self.model}")
         # ensure Langfuse is reachable at startup
         get_langfuse()
     

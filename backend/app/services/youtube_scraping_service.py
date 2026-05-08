@@ -30,9 +30,8 @@ class YouTubeScrapingService:
 
     def _init_summary_client(self) -> None:
         try:
-            from google import genai
-
-            self._client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+            from app.core.ollama_client import get_llm_client
+            self._client = get_llm_client()
         except Exception as exc:
             self._client = None
             logger.warning(f"[YOUTUBE] Summary client unavailable: {exc}")
@@ -147,7 +146,7 @@ class YouTubeScrapingService:
         try:
             t0 = time.time()
             response = self._client.models.generate_content(
-                model=settings.GEMINI_MODEL,
+                model=settings.OLLAMA_MODEL if settings.USE_OLLAMA else settings.GEMINI_MODEL,
                 contents=prompt,
             )
             latency_ms = int((time.time() - t0) * 1000)
@@ -163,7 +162,7 @@ class YouTubeScrapingService:
                     f"Draft summary:\n{text}"
                 )
                 expand_response = self._client.models.generate_content(
-                    model=settings.GEMINI_MODEL,
+                    model=settings.OLLAMA_MODEL if settings.USE_OLLAMA else settings.GEMINI_MODEL,
                     contents=expand_prompt,
                 )
                 expanded_text = self._extract_response_text(expand_response)
@@ -177,7 +176,7 @@ class YouTubeScrapingService:
                 usage = getattr(response, "usage_metadata", None)
                 lf.generation(
                     name="summarize_youtube_video",
-                    model=settings.GEMINI_MODEL,
+                    model=settings.OLLAMA_MODEL if settings.USE_OLLAMA else settings.GEMINI_MODEL,
                     input=prompt,
                     output=text,
                     trace_id=trace_id,

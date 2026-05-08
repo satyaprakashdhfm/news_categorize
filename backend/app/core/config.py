@@ -13,8 +13,13 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     
     # API Keys
-    GOOGLE_API_KEY: str
+    GOOGLE_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash-lite"
+
+    # Ollama (local LLM)
+    USE_OLLAMA: bool = True
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3.2:1b"
     TVLY_API_KEY: str = ""
     
     # Langfuse observability

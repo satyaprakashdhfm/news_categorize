@@ -10,7 +10,6 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from google import genai
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -33,7 +32,8 @@ from app.services.youtube_scraping_service import youtube_scraping_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/browser-research", tags=["browser-research"])
-GEMINI_MODEL = settings.GEMINI_MODEL
+from app.core.ollama_client import get_llm_client, get_active_model
+GEMINI_MODEL = get_active_model()
 
 
 AI_EXPLORE_COMMUNITIES = [
@@ -63,10 +63,8 @@ GEMINI_FLASH_OUTPUT_COST_PER_1M = 1.05
 
 
 def _get_genai_client():
-    if not settings.GOOGLE_API_KEY:
-        return None
     try:
-        return genai.Client(api_key=settings.GOOGLE_API_KEY)
+        return get_llm_client()
     except Exception:
         return None
 
@@ -1106,7 +1104,7 @@ def get_browser_research_history(
 
     total_usage = _empty_usage()
     total_estimated_cost_usd = 0.0
-    llm_model = settings.GEMINI_MODEL
+    llm_model = GEMINI_MODEL
     for metric in metric_rows:
         total_usage["calls"] += int(metric.llm_calls or 0)
         total_usage["prompt_tokens"] += int(metric.prompt_tokens or 0)
