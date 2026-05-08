@@ -1,8 +1,20 @@
+import asyncio
 import warnings
 warnings.filterwarnings("ignore", message="Field name .* shadows an attribute in parent", category=UserWarning)
 
 from dotenv import load_dotenv
 from pathlib import Path
+
+
+def _asyncio_exception_handler(loop, context):
+    """Suppress Playwright background-task InvalidStateError on Python ≤3.10."""
+    exc = context.get("exception")
+    if isinstance(exc, asyncio.InvalidStateError):
+        return
+    loop.default_exception_handler(context)
+
+
+asyncio.get_event_loop().set_exception_handler(_asyncio_exception_handler)
 
 # Load .env early so environment variables are available to imported modules
 env_path = Path(__file__).parent / ".env"
