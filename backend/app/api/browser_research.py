@@ -780,6 +780,10 @@ async def run_live_browser_stream(
 
         query = request.query.strip()
         client = _get_genai_client()
+        # With Ollama on a small VM each summarization call takes 15-25s.
+        # Skip per-item summarization (30-40 calls = 10-20 min) and use
+        # raw text fallback instead. Keep only the 2 fast planning calls.
+        _sum_client = None if settings.USE_OLLAMA else client
         run_id = str(uuid4())
         usage_totals = _empty_usage()
         all_raw: list[dict] = []
@@ -872,7 +876,9 @@ async def run_live_browser_stream(
                 candidate_pool = list(dict.fromkeys(llm_subs + explored_subs))[:50]
 
                 subreddits: list[str] = llm_subs[:5] or FALLBACK_SUBS  # default
-                if client and candidate_pool:
+                # Skip the second LLM pick with Ollama — tiny models pick random subs
+                # from the explore page. The initial planning call subs are more reliable.
+                if client and candidate_pool and not settings.USE_OLLAMA:
                     pick_prompt = (
                         f"Query: '{query}'\n\n"
                         f"From this list of subreddits, pick the 5 most relevant to the query:\n"
@@ -901,7 +907,7 @@ async def run_live_browser_stream(
                     for ev in await nav(browser_url, t=25000):
                         yield ev
                     posts, usage_counts = await _fetch_reddit_posts_for_community(
-                        community=sub, query=query, posts_per_community=6, client=client
+                        community=sub, query=query, posts_per_community=6, client=_sum_client
                     )
                     _merge_usage(usage_totals, usage_counts)
                     reddit_blogs.extend(posts)
@@ -953,7 +959,7 @@ async def run_live_browser_stream(
                     async def summarize_video(v: dict) -> BlogItem:
                         async with sem:
                             body = f"{v.get('description','')} {v.get('meta','')}".strip()
-                            summary, u = await asyncio.to_thread(_summarize_text, v["title"], body, client)
+                            summary, u = await asyncio.to_thread(_summarize_text, v["title"], body, _sum_client)
                             _merge_usage(usage_totals, u)
                             return BlogItem(source="youtube", title=v["title"], summary=summary,
                                             url=v["url"], channel=v.get("channel",""))
@@ -997,7 +1003,7 @@ async def run_live_browser_stream(
                     async def summarize_news(a: dict) -> BlogItem:
                         async with sem:
                             summary, u = await asyncio.to_thread(
-                                _summarize_text, a["title"], a.get("snippet", ""), client
+                                _summarize_text, a["title"], a.get("snippet", ""), _sum_client
                             )
                             _merge_usage(usage_totals, u)
                             return BlogItem(source="news", title=a["title"], summary=summary, url=a["url"])
@@ -1026,7 +1032,7 @@ async def run_live_browser_stream(
                                 if gnews_raw:
                                     async def _sum_gnews(a: dict) -> BlogItem:
                                         async with sem:
-                                            summary, u = await asyncio.to_thread(_summarize_text, a["title"], a.get("snippet", ""), client)
+                                            summary, u = await asyncio.to_thread(_summarize_text, a["title"], a.get("snippet", ""), _sum_client)
                                             _merge_usage(usage_totals, u)
                                             return BlogItem(source="news", title=a["title"], summary=summary, url=a["url"])
                                     gnews_blogs = list(await asyncio.gather(*[_sum_gnews(a) for a in gnews_raw]))
