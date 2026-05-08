@@ -744,6 +744,8 @@ async def run_browser_research_stream(request: BrowserResearchRequest, db: Sessi
             )
             yield emit("result", json.loads(result.model_dump_json()))
 
+        except asyncio.InvalidStateError:
+            logger.debug("[BROWSER-RESEARCH-STREAM] Playwright cleanup InvalidStateError suppressed")
         except Exception as exc:
             logger.exception("[BROWSER-RESEARCH-STREAM] Unexpected error")
             yield emit("error", str(exc))
@@ -1075,6 +1077,10 @@ async def run_live_browser_stream(
                 )
                 yield emit("result", json.loads(result.model_dump_json()))
 
+        except asyncio.InvalidStateError:
+            # Playwright background-task cleanup noise on Python ≤3.10 — safe to ignore.
+            # Research already completed and result was yielded before this fires.
+            logger.debug("[LIVE-BROWSER] Playwright cleanup InvalidStateError suppressed")
         except Exception as exc:
             logger.exception("[LIVE-BROWSER] Unexpected error")
             yield emit("error", str(exc))
