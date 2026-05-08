@@ -74,22 +74,32 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin }) {
       <div className={cn('h-[3px] w-full flex-shrink-0', ACCENT_TOP[card.domain] || 'bg-gray-300 dark:bg-gray-600')} />
 
       <div className="p-4 flex flex-col flex-1 gap-2.5">
-        {/* Top row: type badge + DNA/subcategory tag */}
+        {/* Top row: type badge + DNA code */}
         <div className="flex items-center justify-between gap-2">
           <span className={cn('inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide', TYPE_BADGE[card.type] || TYPE_BADGE.custom)}>
             {card.type === 'domain'
               ? <><Globe2 className="h-3 w-3" /> Domain</>
               : <><Cpu className="h-3 w-3" /> Research</>}
           </span>
-          {dnaCode ? (
+          {dnaCode && (
             <span className={cn('font-mono text-[11px] font-bold px-2 py-0.5 rounded-md', DNA_BADGE[card.domain] || DNA_BADGE.OTH)}>
               {dnaCode}
             </span>
-          ) : card.subdomain && SUBCATEGORY_LABELS[card.subdomain] ? (
-            <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-md', DNA_BADGE.OTH)}>
+          )}
+        </div>
+
+        {/* Category + subcategory tags */}
+        <div className="flex flex-wrap gap-1.5">
+          {category && (
+            <span className={cn('inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full', colors.bg, colors.text)}>
+              {category.icon} {category.name}
+            </span>
+          )}
+          {card.subdomain && card.subdomain !== 'OTH' && SUBCATEGORY_LABELS[card.subdomain] && (
+            <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
               {SUBCATEGORY_LABELS[card.subdomain]}
             </span>
-          ) : null}
+          )}
         </div>
 
         {/* Title */}
@@ -104,21 +114,23 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin }) {
           </p>
         )}
 
+        {/* Run Research button */}
+        <div onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={(e) => { e.stopPropagation(); navigate(`/custom/browser?q=${encodeURIComponent(card.title)}`); }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all"
+          >
+            <Search className="h-3 w-3" /> Run Research
+          </button>
+        </div>
+
         <div className="flex-1" />
 
         {/* Footer */}
         <div className="flex items-center justify-between pt-2.5 border-t border-gray-100 dark:border-gray-700/60">
           <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-            {category && (
-              <span className={cn('font-semibold', colors.text)}>
-                {category.icon} {category.name}
-              </span>
-            )}
             {card.created_at && (
-              <>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span>{formatTimeAgo(card.created_at)}</span>
-              </>
+              <span>{formatTimeAgo(card.created_at)}</span>
             )}
             {card.pinned_count > 0 && (
               <>
@@ -132,12 +144,6 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin }) {
           </div>
 
           <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={(e) => { e.stopPropagation(); navigate(`/custom/browser?q=${encodeURIComponent(card.title)}`); }}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all"
-            >
-              <Search className="h-3 w-3" /> Research
-            </button>
             {isAuthenticated && (
               isPinned ? (
                 <button
