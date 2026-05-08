@@ -409,15 +409,19 @@ def attach_run(payload: AttachRunRequest, db: Session = Depends(get_db)):
             candidates.append((ratio, card))
     candidates.sort(key=lambda x: x[0], reverse=True)
 
-    for _, candidate in candidates[:5]:
-        if _ai_same_topic(payload.query, candidate.title or ""):
+    for ratio_val, candidate in candidates[:5]:
+        # High-similarity title: merge directly without LLM — prevents Ollama failures
+        # creating duplicate cards for the exact same query run again.
+        is_near_match = ratio_val >= 0.80
+        if is_near_match or _ai_same_topic(payload.query, candidate.title or ""):
             candidate.run_id = payload.run_id
             db.commit()
-            return AttachRunResponse(
-                merged=True,
-                card_id=candidate.id,
-                message=f"Merged into existing card: '{candidate.title}' (AI confirmed same topic)",
+            msg = (
+                f"Updated existing card: '{candidate.title}'"
+                if is_near_match
+                else f"Merged into existing card: '{candidate.title}' (AI confirmed same topic)"
             )
+            return AttachRunResponse(merged=True, card_id=candidate.id, message=msg)
 
     # Case 3: no match → new card; auto-classify domain/subdomain via AI
     auto_domain, auto_subdomain = None, None

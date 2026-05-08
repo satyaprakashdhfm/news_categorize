@@ -70,19 +70,49 @@ def _get_genai_client():
 
 
 def _extract_json(text: str):
+    import re as _re
     raw = str(text or "").strip()
+    # Strip markdown code fences (```json ... ``` or ``` ... ```)
+    code_match = _re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, _re.DOTALL)
+    if code_match:
+        try:
+            return json.loads(code_match.group(1))
+        except Exception:
+            pass
     if raw.startswith("{"):
         try:
             return json.loads(raw)
         except Exception:
-            return None
+            pass
     start = raw.find("{")
-    end = raw.rfind("}")
-    if start >= 0 and end > start:
-        try:
-            return json.loads(raw[start:end + 1])
-        except Exception:
-            return None
+    if start < 0:
+        return None
+    # Walk forward matching braces to find the first complete JSON object.
+    # This avoids rfind("}") being fooled by text after the JSON.
+    depth = 0
+    in_str = False
+    esc = False
+    for i, ch in enumerate(raw[start:], start):
+        if esc:
+            esc = False
+            continue
+        if ch == '\\' and in_str:
+            esc = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(raw[start:i + 1])
+                except Exception:
+                    return None
     return None
 
 
@@ -470,6 +500,78 @@ async def _fetch_reddit_posts_for_community(
     return posts[:safe_limit], usage_totals
 
 
+async def _fetch_reddit_global_search(
+    query: str,
+    limit: int = 20,
+    client=None,
+    trace_id: str = None,
+) -> tuple[list[BlogItem], dict[str, int]]:
+    """Search all of Reddit by query — relevant for any topic, no subreddit selection needed."""
+    safe_limit = min(max(limit, 1), 25)
+    _proxy = settings.REDDIT_PROXY_URL or None
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    short_query = " ".join(query.split()[:6])
+
+    posts_data: list[dict] = []
+    async with aiohttp.ClientSession(headers=headers) as session:
+        try:
+            async with session.get(
+                "https://www.reddit.com/search.json",
+                params={"q": short_query, "sort": "top", "t": "week", "limit": str(safe_limit * 2), "type": "link"},
+                timeout=aiohttp.ClientTimeout(total=20),
+                proxy=_proxy,
+            ) as resp:
+                if resp.status == 200:
+                    payload = await resp.json()
+                    posts_data = [n["data"] for n in ((payload.get("data") or {}).get("children") or []) if n.get("data")]
+        except Exception:
+            pass
+
+        if not posts_data:
+            try:
+                async with session.get(
+                    "https://www.reddit.com/search.json",
+                    params={"q": short_query, "sort": "new", "t": "month", "limit": str(safe_limit * 2)},
+                    timeout=aiohttp.ClientTimeout(total=20),
+                    proxy=_proxy,
+                ) as resp:
+                    if resp.status == 200:
+                        payload = await resp.json()
+                        posts_data = [n["data"] for n in ((payload.get("data") or {}).get("children") or []) if n.get("data")]
+            except Exception:
+                pass
+
+    if not posts_data:
+        return [], _empty_usage()
+
+    usage_totals = _empty_usage()
+    posts = []
+    for data in posts_data[:safe_limit]:
+        title = (data.get("title") or "Untitled").strip()
+        selftext = data.get("selftext") or ""
+        summary, usage_counts = await asyncio.to_thread(_summarize_text, title, selftext, client, trace_id)
+        _merge_usage(usage_totals, usage_counts)
+        permalink = data.get("permalink") or ""
+        post_url = f"https://www.reddit.com{permalink}" if permalink else (data.get("url") or "")
+        community = (data.get("subreddit") or "").strip()
+        posts.append(
+            BlogItem(
+                source="reddit",
+                title=title,
+                summary=summary,
+                url=post_url,
+                community=community,
+                author=data.get("author") or None,
+                score=int(data.get("score") or 0),
+                comments=int(data.get("num_comments") or 0),
+                published_at=None,
+            )
+        )
+
+    posts.sort(key=lambda p: ((p.score or 0), (p.comments or 0)), reverse=True)
+    return posts[:safe_limit], usage_totals
+
+
 @router.post("/run", response_model=BrowserResearchResponse)
 async def run_browser_research(request: BrowserResearchRequest, db: Session = Depends(get_db)):
     query = request.query.strip()
@@ -827,7 +929,7 @@ async def run_live_browser_stream(
 
                 # ── CALL 1: LLM plans full strategy + picks subreddits ────
                 yield emit("step", "LLM planning research strategy...")
-                FALLBACK_SUBS = ["MachineLearning", "artificial", "singularity", "LocalLLaMA", "technology"]
+                FALLBACK_SUBS = ["science", "technology", "worldnews", "askscience", "todayilearned"]
                 plan: dict = {"subreddits": FALLBACK_SUBS, "youtube_query": query, "news_query": query}
                 if client:
                     plan_prompt = (
@@ -836,7 +938,9 @@ async def run_live_browser_stream(
                         '{"subreddits":["5 specific subreddit names most likely to have posts about this topic"],'
                         '"youtube_query":"best YouTube search string for this topic",'
                         '"news_query":"best Google News search string for recent news on this topic"}\n\n'
-                        "Subreddit names must be real, specific communities (e.g. MachineLearning, LocalLLaMA, AIStartups). "
+                        "Subreddit names must match the query topic exactly. "
+                        "Example: for biotech queries use biology/Bioinformatics/biotech. "
+                        "For AI queries use MachineLearning/LocalLLaMA. "
                         "Do NOT return generic ones like AskReddit, pics, funny, movies."
                     )
                     try:
