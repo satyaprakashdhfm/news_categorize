@@ -70,6 +70,9 @@ class YouTubeScrapingService:
 
     @staticmethod
     def _extract_response_text(response) -> str:
+        direct = getattr(response, "text", None)
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip()
         texts: list[str] = []
         for candidate in (getattr(response, "candidates", None) or []):
             content = getattr(candidate, "content", None)
