@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowUpRight, Cpu, Globe2, Users } from 'lucide-react';
+import { ArrowUpRight, Cpu, Globe2, Search, Users } from 'lucide-react';
 import { feedCardsApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORIES, DOMAIN_COLORS, SUBCATEGORY_LABELS, formatTimeAgo } from '@/utils/helpers';
@@ -74,18 +74,22 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin }) {
       <div className={cn('h-[3px] w-full flex-shrink-0', ACCENT_TOP[card.domain] || 'bg-gray-300 dark:bg-gray-600')} />
 
       <div className="p-4 flex flex-col flex-1 gap-2.5">
-        {/* Top row: type badge + DNA code */}
+        {/* Top row: type badge + DNA/subcategory tag */}
         <div className="flex items-center justify-between gap-2">
           <span className={cn('inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide', TYPE_BADGE[card.type] || TYPE_BADGE.custom)}>
             {card.type === 'domain'
               ? <><Globe2 className="h-3 w-3" /> Domain</>
               : <><Cpu className="h-3 w-3" /> Research</>}
           </span>
-          {dnaCode && (
+          {dnaCode ? (
             <span className={cn('font-mono text-[11px] font-bold px-2 py-0.5 rounded-md', DNA_BADGE[card.domain] || DNA_BADGE.OTH)}>
               {dnaCode}
             </span>
-          )}
+          ) : card.subdomain && SUBCATEGORY_LABELS[card.subdomain] ? (
+            <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-md', DNA_BADGE.OTH)}>
+              {SUBCATEGORY_LABELS[card.subdomain]}
+            </span>
+          ) : null}
         </div>
 
         {/* Title */}
@@ -128,6 +132,12 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin }) {
           </div>
 
           <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={(e) => { e.stopPropagation(); navigate(`/custom/browser?q=${encodeURIComponent(card.title)}`); }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all"
+            >
+              <Search className="h-3 w-3" /> Research
+            </button>
             {isAuthenticated && (
               isPinned ? (
                 <button
