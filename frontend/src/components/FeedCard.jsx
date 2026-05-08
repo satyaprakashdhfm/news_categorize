@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowUpRight, Cpu, Globe2, Search, Users } from 'lucide-react';
+import { ArrowUpRight, Cpu, Globe2, Users } from 'lucide-react';
 import { feedCardsApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORIES, DOMAIN_COLORS, SUBCATEGORY_LABELS, formatTimeAgo } from '@/utils/helpers';
@@ -113,16 +113,6 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin }) {
             {card.description}
           </p>
         )}
-
-        {/* Run Research button */}
-        <div onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={(e) => { e.stopPropagation(); navigate(`/custom/browser?q=${encodeURIComponent(card.title)}`); }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all"
-          >
-            <Search className="h-3 w-3" /> Run Research
-          </button>
-        </div>
 
         <div className="flex-1" />
 

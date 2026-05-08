@@ -5,7 +5,7 @@ import NewsCard from '@/components/NewsCard';
 import { articlesApi, browserResearchApi, feedCardsApi } from '@/services/api';
 import { CATEGORIES, COUNTRIES, DOMAIN_COLORS, SUBCATEGORY_LABELS, formatTimeAgo } from '@/utils/helpers';
 import { cn } from '@/utils/helpers';
-import { ArrowLeft, ExternalLink, MessageSquare, RefreshCw, ThumbsUp, Users } from 'lucide-react';
+import { ArrowLeft, ExternalLink, MessageSquare, RefreshCw, Search, ThumbsUp, Users } from 'lucide-react';
 
 const PAGE_SIZE = 15;
 
@@ -254,11 +254,19 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
                   )}
                 </div>
               </div>
-              {card.created_at && (
-                <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
-                  Last updated {formatTimeAgo(card.created_at)}
-                </p>
-              )}
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={() => navigate(`/custom/browser?q=${encodeURIComponent(card.title)}`)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+                >
+                  <Search className="h-4 w-4" /> Run Research
+                </button>
+                {card.created_at && (
+                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                    Last updated {formatTimeAgo(card.created_at)}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         )}
