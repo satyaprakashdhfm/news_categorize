@@ -1,55 +1,90 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import Header from '@/components/Header';
-import { Youtube, MessageSquare, Globe } from 'lucide-react';
 
 export default function CustomPage({ isDark, toggleDark }) {
-  const navigate = useNavigate();
-
   return (
-    <div className="min-h-screen bg-secondary-50 dark:bg-gray-900 transition-colors">
+    <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
       <Header isDark={isDark} toggleDark={toggleDark} />
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="max-w-6xl mx-auto">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-secondary-900 dark:text-white mb-2">
-              Custom Cards (Browser Integrated)
-            </h1>
-            <p className="text-secondary-600 dark:text-gray-400">
-              One integrated flow for Reddit + YouTube + News via Browser Research.
+      <main className="main" style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px' }}>
+        {/* Page header */}
+        <div className="page">
+          <div className="page__title">
+            <h1 className="display">Custom<br/><em>Cards</em></h1>
+            <p className="page__sub">
+              One integrated flow combines Reddit, YouTube, and Google News per run. Two backup scrapers remain available.
             </p>
+          </div>
+          <div className="page__actions">
+            <div className="metric">
+              <span className="eyebrow">Integrated runs</span>
+              <span className="metric__val mono">--</span>
+            </div>
+            <div className="metric">
+              <span className="eyebrow">Last run</span>
+              <span className="metric__val mono">--</span>
+            </div>
+          </div>
+        </div>
 
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button
-                onClick={() => navigate('/custom/browser')}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-              >
-                <Globe className="h-5 w-5" />
-                Open Integrated Browser Cards
-              </button>
+        {/* Hub layout */}
+        <div className="hub">
+          {/* Primary card */}
+          <Link to="/custom/browser" className="hub__primary">
+            <div className="hub__primaryHead">
+              <span className="eyebrow" style={{ color: 'var(--accent)' }}>Primary flow</span>
+              <span className="badge badge--info"><span className="badge__dot" />Recommended</span>
+            </div>
+            <h2 className="hub__primaryTitle">Integrated Browser Research</h2>
+            <p className="hub__primaryBody">
+              Dynamically discovers Reddit communities, searches YouTube, and scrapes Google News for any query. Each run produces one card with all three source streams and a grounded summary.
+            </p>
+            <div className="hub__primaryFoot">
+              <div className="hub__sources">
+                <span className="hub__src"><span className="src__glyph" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', borderColor: 'rgba(127,212,209,0.15)' }}>R</span>Reddit</span>
+                <span className="hub__src"><span className="src__glyph" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', borderColor: 'rgba(127,212,209,0.15)' }}>Y</span>YouTube</span>
+                <span className="hub__src"><span className="src__glyph" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', borderColor: 'rgba(127,212,209,0.15)' }}>G</span>Google News</span>
+              </div>
+              <span className="btn btn--primary">Open Integrated Browser Cards</span>
+            </div>
+          </Link>
 
-              <button
-                onClick={() => navigate('/custom/youtube')}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold"
-              >
-                <Youtube className="h-5 w-5" />
-                Open YouTube Scraper (Backup)
-              </button>
-
-              <button
-                onClick={() => navigate('/custom/reddit')}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white font-semibold"
-              >
-                <MessageSquare className="h-5 w-5" />
-                Open Reddit Scraper (Backup)
-              </button>
+          {/* Backups label */}
+          <div className="hub__row">
+            <div className="hub__label">
+              <span className="eyebrow">Backups</span>
+              <span className="meta">Legacy flows — kept for parity while migration completes</span>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-secondary-200 dark:border-gray-700 p-6 text-secondary-700 dark:text-gray-300">
-            Browser Research now stores run history cards with time, and each card contains Reddit + YouTube + News together.
-            Use Open Integrated Browser Cards to view or reopen any run.
+          {/* Backup cards */}
+          <div className="hub__backups">
+            <Link to="/custom/youtube" className="hub__card hub__card--yt">
+              <div className="hub__cardHead">
+                <span className="src__glyph" style={{ background: 'rgba(227,93,93,0.12)', color: '#E35D5D', borderColor: 'rgba(227,93,93,0.15)' }}>Y</span>
+                <span className="tag">BACKUP</span>
+              </div>
+              <h3 className="hub__cardTitle">YouTube Scraper</h3>
+              <p className="hub__cardBody">Channel handles → latest 5 videos per channel → blog-style summaries.</p>
+              <div className="hub__cardFoot">
+                <span className="meta">Standalone flow</span>
+                <span className="hub__go">→</span>
+              </div>
+            </Link>
+
+            <Link to="/custom/reddit" className="hub__card hub__card--rd">
+              <div className="hub__cardHead">
+                <span className="src__glyph" style={{ background: 'rgba(232,145,60,0.12)', color: '#E8913C', borderColor: 'rgba(232,145,60,0.15)' }}>R</span>
+                <span className="tag">BACKUP</span>
+              </div>
+              <h3 className="hub__cardTitle">Reddit Scraper</h3>
+              <p className="hub__cardBody">Communities + mode (top / hot / new) → top 5 posts + full summaries.</p>
+              <div className="hub__cardFoot">
+                <span className="meta">Standalone flow</span>
+                <span className="hub__go">→</span>
+              </div>
+            </Link>
           </div>
         </div>
       </main>

@@ -98,13 +98,21 @@ export default function AdminPage() {
   const customCards = cards.filter(c => c.type === 'custom');
 
   return (
-    <div className="min-h-screen bg-gray-950">
-      {/* Standalone admin header — no user auth, no app nav */}
-      <header className="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center gap-3">
-        <Shield className="h-5 w-5 text-amber-400 flex-shrink-0" />
-        <span className="text-white font-bold text-lg">Curio Admin</span>
-        <span className="ml-2 px-2 py-0.5 rounded text-xs font-semibold bg-amber-400/20 text-amber-300 border border-amber-400/30">Internal</span>
-        <a href="/" className="ml-auto text-xs text-gray-500 hover:text-gray-300 transition-colors">← Back to app</a>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
+      {/* Standalone admin header */}
+      <header style={{
+        background: 'var(--bg-1)', borderBottom: '1px solid var(--line-1)',
+        padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <Shield className="h-5 w-5 flex-shrink-0" style={{ color: 'var(--signal-warn)' }} />
+        <span style={{ color: 'var(--fg-1)', fontWeight: 700, fontSize: 18 }}>Curio Admin</span>
+        <span style={{
+          marginLeft: 8, padding: '2px 8px', borderRadius: 'var(--r-sm)',
+          fontSize: 11, fontWeight: 600,
+          background: 'rgba(232,182,92,0.15)', color: 'var(--signal-warn)',
+          border: '1px solid rgba(232,182,92,0.3)',
+        }}>Internal</span>
+        <a href="/" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--fg-3)', textDecoration: 'none' }}>← Back to app</a>
       </header>
       <main className="container mx-auto px-4 py-6">
         <div className="max-w-4xl mx-auto space-y-5 text-gray-100">

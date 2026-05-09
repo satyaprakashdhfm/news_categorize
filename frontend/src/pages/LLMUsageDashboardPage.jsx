@@ -20,20 +20,10 @@ export default function LLMUsageDashboardPage({ isDark, toggleDark }) {
     const map = new Map();
     for (const row of rows) {
       const usage = row?.llm_usage;
-      if (!usage) {
-        continue;
-      }
+      if (!usage) continue;
       const model = usage.model || 'unknown';
       if (!map.has(model)) {
-        map.set(model, {
-          model,
-          runs: 0,
-          calls: 0,
-          prompt_tokens: 0,
-          output_tokens: 0,
-          total_tokens: 0,
-          estimated_cost_usd: 0,
-        });
+        map.set(model, { model, runs: 0, calls: 0, prompt_tokens: 0, output_tokens: 0, total_tokens: 0, estimated_cost_usd: 0 });
       }
       const bucket = map.get(model);
       bucket.runs += 1;
@@ -54,105 +44,139 @@ export default function LLMUsageDashboardPage({ isDark, toggleDark }) {
       setRows(res?.runs || []);
       setTotals(res?.totals || null);
     } catch (err) {
-      setError(err?.response?.data?.detail || err.message || 'Failed to load LLM usage history');
+      setError(err?.response?.data?.detail || err.message || 'Failed to load');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   return (
-    <div className="min-h-screen bg-secondary-50 dark:bg-gray-900 transition-colors">
+    <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
       <Header isDark={isDark} toggleDark={toggleDark} />
 
-      <main className="container mx-auto px-4 py-8 space-y-6">
-        <section className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-transparent dark:border-gray-700">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-secondary-900 dark:text-white">LLM Usage Dashboard</h1>
-              <p className="text-sm text-secondary-600 dark:text-gray-300 mt-1">
-                Separate model-wise observability for each browser research run.
-              </p>
-            </div>
-            <button
-              onClick={load}
-              className="px-3 py-2 rounded-lg text-sm font-semibold bg-secondary-100 dark:bg-gray-700 text-secondary-700 dark:text-gray-200"
-            >
+      <main className="main" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px' }}>
+        {/* Page header */}
+        <div className="page">
+          <div className="page__title">
+            <h1 className="display">LLM<br/><em>Usage</em></h1>
+            <p className="page__sub">Model-wise observability for each browser research run. Costs, tokens, and call volume — live.</p>
+          </div>
+          <div className="page__actions">
+            <button className="btn" onClick={load} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={loading ? { animation: 'spin 1s linear infinite' } : undefined}>
+                <path d="M2 6 A4 4 0 0 1 10 6 M10 4 V6 H8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M10 6 A4 4 0 0 1 2 6 M2 8 V6 H4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
               Refresh
             </button>
           </div>
-        </section>
+        </div>
 
-        <section className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-transparent dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-secondary-900 dark:text-white mb-3">Model Summary</h2>
+        {/* KPI cards */}
+        {totals && (
+          <div className="kpis" style={{ marginBottom: 24 }}>
+            <div className="kpi">
+              <span className="eyebrow">Total cost · all-time</span>
+              <span className="kpi__val mono">{fmtUsd(totals.estimated_cost_usd)}</span>
+            </div>
+            <div className="kpi">
+              <span className="eyebrow">Total tokens</span>
+              <span className="kpi__val mono">{fmtInt(totals.total_tokens)}</span>
+            </div>
+            <div className="kpi">
+              <span className="eyebrow">Total calls</span>
+              <span className="kpi__val mono">{fmtInt(totals.calls)}</span>
+            </div>
+            <div className="kpi">
+              <span className="eyebrow">Runs</span>
+              <span className="kpi__val mono">{fmtInt(rows.length)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Model summary */}
+        <div className="panel" style={{ marginBottom: 24 }}>
+          <header className="panel__head">
+            <h2 className="panel__title">Model Summary</h2>
+          </header>
           {!byModel.length ? (
-            <p className="text-sm text-secondary-600 dark:text-gray-300">No model usage found yet.</p>
+            <div className="empty">
+              <p className="empty__text">No model usage found yet.</p>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {byModel.map((m) => (
-                <div key={m.model} className="rounded-lg bg-secondary-100 dark:bg-gray-900 p-4">
-                  <p className="text-sm font-semibold text-secondary-900 dark:text-white break-all">{m.model}</p>
-                  <p className="text-xs text-secondary-600 dark:text-gray-300 mt-2">Runs: {fmtInt(m.runs)} | Calls: {fmtInt(m.calls)}</p>
-                  <p className="text-xs text-secondary-600 dark:text-gray-300">Tokens: {fmtInt(m.total_tokens)}</p>
-                  <p className="text-xs text-secondary-600 dark:text-gray-300">Cost: {fmtUsd(m.estimated_cost_usd)}</p>
+                <div key={m.model} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+                  padding: '12px 0', borderBottom: '1px solid var(--line-1)',
+                }}>
+                  <div>
+                    <p style={{ fontSize: 'var(--t-body)', fontWeight: 600, color: 'var(--fg-1)', margin: 0 }}>{m.model}</p>
+                    <p className="meta" style={{ marginTop: 2 }}>{fmtInt(m.runs)} runs · {fmtInt(m.calls)} calls</p>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontSize: 'var(--t-body)', fontWeight: 600, color: 'var(--fg-1)', margin: 0, fontFamily: 'var(--font-mono)' }}>{fmtInt(m.total_tokens)} tkn</p>
+                    <p className="meta" style={{ fontFamily: 'var(--font-mono)' }}>{fmtUsd(m.estimated_cost_usd)}</p>
+                  </div>
                 </div>
               ))}
             </div>
           )}
-          {totals ? (
-            <p className="text-xs text-secondary-500 dark:text-gray-400 mt-4">
-              All-history totals: {fmtInt(totals.calls)} calls, {fmtInt(totals.total_tokens)} tokens, {fmtUsd(totals.estimated_cost_usd)}.
-            </p>
-          ) : null}
-        </section>
+        </div>
 
-        <section className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-transparent dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-secondary-900 dark:text-white mb-3">Run-by-Run Records</h2>
+        {/* Run-by-Run table */}
+        <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line-1)' }}>
+            <h2 style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>Run-by-Run Records</h2>
+          </div>
 
-          {error ? <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p> : null}
-          {loading ? <p className="text-sm text-secondary-600 dark:text-gray-300">Loading usage records...</p> : null}
-          {!loading && !rows.length ? <p className="text-sm text-secondary-600 dark:text-gray-300">No usage records yet.</p> : null}
+          {error && <p style={{ padding: '12px 24px', color: 'var(--signal-critical)', fontSize: 'var(--t-meta)' }}>{error}</p>}
 
-          {!loading && rows.length ? (
-            <div className="overflow-x-auto rounded-lg border border-secondary-200 dark:border-gray-700">
-              <table className="min-w-[640px] w-full text-sm">
-                <thead className="bg-secondary-100 dark:bg-gray-900 text-secondary-700 dark:text-gray-200">
+          {loading ? (
+            <div className="empty"><p className="empty__text">Loading usage records...</p></div>
+          ) : !rows.length ? (
+            <div className="empty"><p className="empty__text">No usage records yet.</p></div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="dtable">
+                <thead>
                   <tr>
-                    <th className="text-left px-3 py-2 whitespace-nowrap">Time</th>
-                    <th className="text-left px-3 py-2 whitespace-nowrap hidden sm:table-cell">Model</th>
-                    <th className="text-left px-3 py-2">Query</th>
-                    <th className="text-right px-3 py-2 whitespace-nowrap">Calls</th>
-                    <th className="text-right px-3 py-2 whitespace-nowrap hidden md:table-cell">Prompt</th>
-                    <th className="text-right px-3 py-2 whitespace-nowrap hidden md:table-cell">Output</th>
-                    <th className="text-right px-3 py-2 whitespace-nowrap">Tokens</th>
-                    <th className="text-right px-3 py-2 whitespace-nowrap">Cost</th>
+                    <th>Time</th>
+                    <th>Model</th>
+                    <th>Query</th>
+                    <th style={{ textAlign: 'right' }}>Calls</th>
+                    <th style={{ textAlign: 'right' }}>Prompt</th>
+                    <th style={{ textAlign: 'right' }}>Output</th>
+                    <th style={{ textAlign: 'right' }}>Tokens</th>
+                    <th style={{ textAlign: 'right' }}>Cost</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row) => {
                     const u = row?.llm_usage || {};
                     return (
-                      <tr key={row.run_id} className="border-t border-secondary-200 dark:border-gray-700 text-secondary-800 dark:text-gray-200">
-                        <td className="px-3 py-2 whitespace-nowrap text-xs">{new Date(row.generated_at).toLocaleString()}</td>
-                        <td className="px-3 py-2 text-xs hidden sm:table-cell">{u.model || 'N/A'}</td>
-                        <td className="px-3 py-2 max-w-[160px] sm:max-w-[220px] truncate">{row.query}</td>
-                        <td className="px-3 py-2 text-right">{fmtInt(u.calls)}</td>
-                        <td className="px-3 py-2 text-right hidden md:table-cell">{fmtInt(u.prompt_tokens)}</td>
-                        <td className="px-3 py-2 text-right hidden md:table-cell">{fmtInt(u.output_tokens)}</td>
-                        <td className="px-3 py-2 text-right">{fmtInt(u.total_tokens)}</td>
-                        <td className="px-3 py-2 text-right">{fmtUsd(u.estimated_cost_usd)}</td>
+                      <tr key={row.run_id}>
+                        <td style={{ whiteSpace: 'nowrap', fontSize: 'var(--t-micro)' }}>{new Date(row.generated_at).toLocaleString()}</td>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--t-micro)' }}>{u.model || 'N/A'}</td>
+                        <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.query}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtInt(u.calls)}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtInt(u.prompt_tokens)}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtInt(u.output_tokens)}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{fmtInt(u.total_tokens)}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtUsd(u.estimated_cost_usd)}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-          ) : null}
-        </section>
+          )}
+        </div>
       </main>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

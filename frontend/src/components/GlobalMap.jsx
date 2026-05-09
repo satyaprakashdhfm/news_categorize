@@ -36,18 +36,18 @@ export default function GlobalMap({ stats, selectedCountry, onSelectCountry }) {
   const navigate = useNavigate();
 
   const countryStats = stats?.country_counts || [];
-  
+
   const getCountryArticleCount = (code) => {
     const countryStat = countryStats.find(c => c.country === code);
     return countryStat?.count || 0;
   };
 
-  const getCountryColor = (code) => {
+  const getCountryStyle = (code) => {
     const count = getCountryArticleCount(code);
-    if (count === 0) return 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300';
-    if (count < 10) return 'bg-blue-200 dark:bg-blue-900/50 hover:bg-blue-300 dark:hover:bg-blue-800 text-blue-900 dark:text-blue-200';
-    if (count < 50) return 'bg-blue-400 dark:bg-blue-700 hover:bg-blue-500 dark:hover:bg-blue-600 text-white';
-    return 'bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-400 text-white';
+    if (count === 0) return { background: 'var(--bg-3)', color: 'var(--fg-3)' };
+    if (count < 10) return { background: 'var(--accent-soft)', color: 'var(--accent)' };
+    if (count < 50) return { background: 'rgba(127,212,209,0.25)', color: 'var(--accent)' };
+    return { background: 'var(--accent)', color: 'var(--fg-on-accent)' };
   };
 
   const selectedCenter = COUNTRY_COORDS[selectedCountry] || [20, 0];
@@ -55,15 +55,15 @@ export default function GlobalMap({ stats, selectedCountry, onSelectCountry }) {
   const selectedArticles = getCountryArticleCount(selectedCountry);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-transparent dark:border-gray-700">
-      <h2 className="text-2xl font-bold text-secondary-900 dark:text-white mb-2 flex items-center gap-2">
+    <div className="panel">
+      <h2 style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--fg-1)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
         Global News Coverage
       </h2>
-      <p className="text-sm text-secondary-600 dark:text-gray-300 mb-4">
+      <p style={{ fontSize: 'var(--t-meta)', color: 'var(--fg-2)', marginBottom: 16 }}>
         Click a country pin to select it. Use Open Country Page to go deeper.
       </p>
 
-      <div className="rounded-xl overflow-hidden border border-secondary-200 dark:border-gray-700">
+      <div style={{ borderRadius: 'var(--r-lg)', overflow: 'hidden', border: '1px solid var(--line-1)' }}>
         <MapContainer
           center={[20, 0]}
           zoom={2}
@@ -101,11 +101,12 @@ export default function GlobalMap({ stats, selectedCountry, onSelectCountry }) {
                     <p className="text-xs">Articles: {articleCount}</p>
                     <button
                       onClick={() => navigate(`/country/${country.code}`)}
-                      className="mt-1 w-full rounded-md px-2 py-1 text-xs font-semibold bg-blue-600 text-white"
+                      className="btn btn--primary"
+                      style={{ marginTop: 4, width: '100%', justifyContent: 'center', fontSize: 'var(--t-meta)' }}
                     >
                       Open Country Page
                     </button>
-                    {isActive ? <p className="text-[11px] text-emerald-700">Selected on home</p> : null}
+                    {isActive ? <p style={{ fontSize: 'var(--t-micro)', color: 'var(--signal-positive)' }}>Selected on home</p> : null}
                   </div>
                 </Popup>
               </Marker>
@@ -114,28 +115,37 @@ export default function GlobalMap({ stats, selectedCountry, onSelectCountry }) {
         </MapContainer>
       </div>
 
-      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-        <div className="rounded-lg bg-secondary-100 dark:bg-gray-900 p-3 text-secondary-800 dark:text-gray-200">
-          <p className="text-xs text-secondary-500 dark:text-gray-400">Total Articles On Map</p>
-          <p className="font-semibold text-lg">{totalArticles.toLocaleString()}</p>
+      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3" style={{ fontSize: 'var(--t-meta)' }}>
+        <div style={{ borderRadius: 'var(--r-md)', background: 'var(--bg-2)', padding: 12, color: 'var(--fg-1)' }}>
+          <p className="eyebrow" style={{ marginBottom: 4 }}>Total Articles On Map</p>
+          <p style={{ fontWeight: 600, fontSize: 'var(--t-h3)', margin: 0 }}>{totalArticles.toLocaleString()}</p>
         </div>
-        <div className="rounded-lg bg-secondary-100 dark:bg-gray-900 p-3 text-secondary-800 dark:text-gray-200">
-          <p className="text-xs text-secondary-500 dark:text-gray-400">Selected Country ({selectedCountry})</p>
-          <p className="font-semibold text-lg">{selectedArticles.toLocaleString()}</p>
+        <div style={{ borderRadius: 'var(--r-md)', background: 'var(--bg-2)', padding: 12, color: 'var(--fg-1)' }}>
+          <p className="eyebrow" style={{ marginBottom: 4 }}>Selected Country ({selectedCountry})</p>
+          <p style={{ fontWeight: 600, fontSize: 'var(--t-h3)', margin: 0 }}>{selectedArticles.toLocaleString()}</p>
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
         {COUNTRIES.map((country) => {
           const articleCount = getCountryArticleCount(country.code);
-          const colorClass = getCountryColor(country.code);
+          const cStyle = getCountryStyle(country.code);
           return (
             <button
               key={country.code}
               onClick={() => onSelectCountry?.(country.code)}
-              className={`${colorClass} rounded-lg px-3 py-2 text-xs font-semibold transition-all`}
+              style={{
+                ...cStyle,
+                borderRadius: 'var(--r-md)',
+                padding: '6px 12px',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
             >
-              {country.flag} {country.code} • {articleCount}
+              {country.flag} {country.code} &bull; {articleCount}
             </button>
           );
         })}

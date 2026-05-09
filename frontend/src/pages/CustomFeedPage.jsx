@@ -151,10 +151,10 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
 
   if (agentLoading) {
     return (
-      <div className="min-h-screen bg-secondary-50 dark:bg-gray-900 transition-colors">
+      <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
         <Header isDark={isDark} toggleDark={toggleDark} />
         <main className="container mx-auto px-4 py-8">
-          <div className="max-w-3xl mx-auto bg-white dark:bg-gray-800 rounded-xl p-8 border border-transparent dark:border-gray-700 text-center text-secondary-600 dark:text-gray-400">
+          <div className="panel" style={{ maxWidth: 768, margin: '0 auto', textAlign: 'center', color: 'var(--fg-2)' }}>
             Loading custom feed...
           </div>
         </main>
@@ -164,12 +164,12 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
 
   if (!agent) {
     return (
-      <div className="min-h-screen bg-secondary-50 dark:bg-gray-900 transition-colors">
+      <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
         <Header isDark={isDark} toggleDark={toggleDark} />
         <main className="container mx-auto px-4 py-8">
-          <div className="max-w-3xl mx-auto bg-white dark:bg-gray-800 rounded-xl p-8 border border-transparent dark:border-gray-700">
-            <p className="text-secondary-700 dark:text-gray-300 mb-4">Custom card not found.</p>
-            <Link to="/custom" className="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium">
+          <div className="panel" style={{ maxWidth: 768, margin: '0 auto' }}>
+            <p style={{ color: 'var(--fg-2)', marginBottom: 16 }}>Custom card not found.</p>
+            <Link to="/custom" className="back">
               <ArrowLeft className="h-4 w-4" />
               Back to Custom Cards
             </Link>
@@ -180,25 +180,25 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
   }
 
   return (
-    <div className="min-h-screen bg-secondary-50 dark:bg-gray-900 transition-colors">
+    <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
       <Header isDark={isDark} toggleDark={toggleDark} />
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-7xl mx-auto">
-          <Link to="/custom" className="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 font-medium mb-6">
+          <Link to="/custom" className="back mb-6">
             <ArrowLeft className="h-4 w-4" />
             Back to Custom Cards
           </Link>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-6 border border-transparent dark:border-gray-700">
+          <div className="panel mb-6">
             <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="h-5 w-5 text-primary-600 dark:text-primary-400" />
-              <h1 className="text-2xl font-bold text-secondary-900 dark:text-white">{agent.title}</h1>
+              <Sparkles className="h-5 w-5" style={{ color: 'var(--accent)' }} />
+              <h1 style={{ fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>{agent.title}</h1>
             </div>
-            <p className="text-secondary-700 dark:text-gray-300 mb-4">{agent.prompt}</p>
+            <p style={{ color: 'var(--fg-2)', marginBottom: 16 }}>{agent.prompt}</p>
             <div className="flex flex-wrap gap-2">
               {keywords.map((k) => (
-                <span key={k} className="px-2 py-1 rounded-md text-xs bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">
+                <span key={k} className="badge badge--info">
                   {k}
                 </span>
               ))}
@@ -208,7 +208,7 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
               <button
                 onClick={runSearch}
                 disabled={searchLoading}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white font-semibold"
+                className="btn btn--primary"
               >
                 <Play className="h-4 w-4" />
                 Start Search
@@ -217,7 +217,8 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
               <button
                 onClick={stopSearch}
                 disabled={!searchLoading}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white font-semibold"
+                className="btn"
+                style={!searchLoading ? { opacity: 0.5 } : { borderColor: 'var(--signal-critical)', color: 'var(--signal-critical)' }}
               >
                 <Square className="h-4 w-4" />
                 Stop
@@ -225,21 +226,21 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 mb-6 border border-transparent dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-secondary-900 dark:text-white mb-3">Search Output</h2>
+          <div className="panel mb-6">
+            <h2 style={{ fontSize: 'var(--t-h3)', fontWeight: 600, color: 'var(--fg-1)', margin: '0 0 12px' }}>Search Output</h2>
 
             {searchMeta && (
-              <p className="text-sm text-secondary-600 dark:text-gray-300 mb-3">
+              <p style={{ fontSize: 'var(--t-meta)', color: 'var(--fg-2)', marginBottom: 12 }}>
                 date={searchMeta.date} limit={searchMeta.limit} total_found={searchMeta.totalFound}
               </p>
             )}
 
             {searchLog.length === 0 && (
-              <p className="text-sm text-secondary-500 dark:text-gray-400">No search yet. Click Start Search.</p>
+              <p className="meta">No search yet. Click Start Search.</p>
             )}
 
             {searchLog.length > 0 && (
-              <div className="rounded-lg bg-secondary-100 dark:bg-gray-900 p-3 font-mono text-xs text-secondary-700 dark:text-gray-300 max-h-44 overflow-auto space-y-1">
+              <div className="mono" style={{ background: 'var(--bg-2)', borderRadius: 'var(--r-md)', padding: 12, fontSize: 'var(--t-meta)', color: 'var(--fg-2)', maxHeight: 176, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {searchLog.map((line, idx) => (
                   <div key={`${line}-${idx}`}>{line}</div>
                 ))}
@@ -249,25 +250,25 @@ export default function CustomFeedPage({ isDark, toggleDark }) {
 
           {searchLoading && (
             <div className="flex justify-center items-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" />
+              <div className="animate-spin rounded-full h-12 w-12" style={{ borderBottom: '2px solid var(--accent)' }} />
             </div>
           )}
 
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg">
+            <div style={{ background: 'rgba(240,110,110,0.08)', border: '1px solid rgba(240,110,110,0.25)', color: 'var(--signal-critical)', padding: '12px 16px', borderRadius: 'var(--r-md)', marginBottom: 16 }}>
               {error}
             </div>
           )}
 
           {!searchLoading && !error && articles.length === 0 && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-8 text-center text-secondary-600 dark:text-gray-400 border border-transparent dark:border-gray-700">
-              No articles matched this prompt yet. Try a broader custom prompt.
+            <div className="empty" style={{ background: 'var(--bg-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-lg)' }}>
+              <p className="empty__text">No articles matched this prompt yet. Try a broader custom prompt.</p>
             </div>
           )}
 
           {!searchLoading && !error && articles.length > 0 && (
             <>
-              <p className="text-sm text-secondary-500 dark:text-gray-400 mb-4">
+              <p className="meta" style={{ marginBottom: 16 }}>
                 Showing {articles.length} accumulated custom feed articles.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

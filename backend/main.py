@@ -23,7 +23,7 @@ load_dotenv(dotenv_path=env_path)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import articles, scraping, custom_agents, custom_youtube, custom_reddit, browser_research, debug
-from app.api import auth, feed_cards
+from app.api import auth, feed_cards, recommendations
 from app.core.database import Base, engine
 import app.models  # noqa: F401 - ensure models are registered before create_all
 from app.core.config import settings
@@ -68,12 +68,31 @@ app.include_router(custom_youtube.router)
 app.include_router(custom_reddit.router)
 app.include_router(browser_research.router)
 app.include_router(debug.router)
+app.include_router(recommendations.router)
 
 
 @app.on_event("startup")
 async def startup_event():
     # Auto-create missing tables (including custom_agents) for this project setup.
     Base.metadata.create_all(bind=engine)
+
+    # Start recommendation scheduler
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        from app.services.recommendation_service import generate_recommendations
+
+        scheduler = BackgroundScheduler()
+        # 6:00 AM IST = 0:30 UTC
+        scheduler.add_job(generate_recommendations, CronTrigger(hour=0, minute=30), id="rec_morning")
+        # 2:00 PM IST = 8:30 UTC
+        scheduler.add_job(generate_recommendations, CronTrigger(hour=8, minute=30), id="rec_afternoon")
+        # 8:00 PM IST = 14:30 UTC
+        scheduler.add_job(generate_recommendations, CronTrigger(hour=14, minute=30), id="rec_evening")
+        scheduler.start()
+        logger.info("[SCHEDULER] Recommendation cron started — 6am/2pm/8pm IST")
+    except ImportError:
+        logger.warning("[SCHEDULER] APScheduler not installed — recommendation cron disabled. Install with: pip install apscheduler")
 
 
 @app.get("/")

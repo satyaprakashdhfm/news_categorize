@@ -15,12 +15,20 @@ export const authApi = {
   register: (data) => api.post('/auth/register', data).then((r) => r.data),
   login: (data) => api.post('/auth/login', data).then((r) => r.data),
   me: () => api.get('/auth/me').then((r) => r.data),
+  updateInterests: (interests) => api.put('/auth/interests', { interests }).then((r) => r.data),
+};
+
+// ── Recommendations ─────────────────────────────────────────────────────────
+export const recommendationsApi = {
+  getMy: (params = {}) => api.get('/recommendations/my', { params }).then((r) => r.data),
+  markSeen: (recIds) => api.post('/recommendations/mark-seen', recIds).then((r) => r.data),
 };
 
 // ── Feed Cards ───────────────────────────────────────────────────────────────
 export const feedCardsApi = {
   getGlobal: (params = {}) => api.get('/feed-cards/global', { params }).then((r) => r.data),
   getMyFeed: () => api.get('/feed-cards/my/feed').then((r) => r.data),
+  getMyCards: (params = {}) => api.get('/feed-cards/my/cards', { params }).then((r) => r.data),
   getCard: (id) => api.get(`/feed-cards/${id}`).then((r) => r.data),
   create: (data) => api.post('/feed-cards', data).then((r) => r.data),
   update: (id, data) => api.patch(`/feed-cards/${id}`, data).then((r) => r.data),

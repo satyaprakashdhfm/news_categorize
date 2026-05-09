@@ -3,29 +3,31 @@ import { Link, useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import FilterBar from '@/components/FilterBar';
 import FeedCard from '@/components/FeedCard';
-import { feedCardsApi } from '@/services/api';
+import { feedCardsApi, recommendationsApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
-import { Globe2, LogIn, Plus, RefreshCw, Sparkles, TrendingUp, Users, ChevronDown, ChevronRight } from 'lucide-react';
-import { cn, CATEGORIES, SUBCATEGORY_LABELS } from '@/utils/helpers';
+import { CATEGORIES, SUBCATEGORY_LABELS } from '@/utils/helpers';
 
-const TABS = [
-  { id: 'global', label: 'Global Feed', icon: <Globe2 className="h-4 w-4" /> },
-  { id: 'your',   label: 'Your Feed',   icon: <Sparkles className="h-4 w-4" /> },
-];
-
-const DOMAIN_COLORS_SIDEBAR = {
-  POL: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', dot: 'bg-blue-500' },
-  ECO: { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-500' },
-  BUS: { bg: 'bg-violet-100 dark:bg-violet-900/30', text: 'text-violet-700 dark:text-violet-300', dot: 'bg-violet-500' },
-  TEC: { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300', dot: 'bg-orange-500' },
-  OTH: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-600 dark:text-gray-300', dot: 'bg-gray-400' },
+const DOMAIN_COLORS_CSS = {
+  TEC: 'var(--domain-tech)',
+  ECO: 'var(--domain-econ)',
+  POL: 'var(--domain-policy)',
+  BUS: 'var(--domain-biz)',
+  OTH: 'var(--domain-others)',
 };
 
-function TrendingSidebar({ trending }) {
-  const navigate = useNavigate();
-  const [openDomains, setOpenDomains] = useState({});
+const SOURCE_ICONS = {
+  google_news: '📰',
+  reddit: '🔴',
+  youtube: '▶️',
+};
 
-  const toggleDomain = (d) => setOpenDomains((prev) => ({ ...prev, [d]: !prev[d] }));
+function TrendingSidebar({ trending, navigate }) {
+  const [openIds, setOpenIds] = useState(new Set(['TEC', 'ECO']));
+  const toggle = (id) => {
+    const next = new Set(openIds);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setOpenIds(next);
+  };
 
   const domainOrder = ['TEC', 'ECO', 'POL', 'BUS', 'OTH'];
   const sortedDomains = Object.keys(trending).sort(
@@ -33,124 +35,129 @@ function TrendingSidebar({ trending }) {
   );
 
   if (sortedDomains.length === 0) {
-    return (
-      <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-6">No trending data yet.</div>
-    );
+    return <div className="meta" style={{ textAlign: 'center', padding: '24px 0' }}>No trending data yet.</div>;
   }
 
   return (
-    <div className="space-y-1">
+    <>
       {sortedDomains.map((domain) => {
         const catInfo = CATEGORIES.find((c) => c.id === domain);
-        const colors = DOMAIN_COLORS_SIDEBAR[domain] || DOMAIN_COLORS_SIDEBAR.OTH;
         const subdomains = trending[domain];
-        const isOpen = openDomains[domain] !== false; // open by default
+        const isOpen = openIds.has(domain);
 
         return (
-          <div key={domain}>
-            <button
-              onClick={() => toggleDomain(domain)}
-              className={cn(
-                'w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all',
-                colors.bg, colors.text,
-              )}
-            >
-              <span className="flex items-center gap-1.5">
-                <span className={cn('w-2 h-2 rounded-full flex-shrink-0', colors.dot)} />
-                {catInfo ? `${catInfo.icon} ${catInfo.name}` : domain}
+          <div key={domain} className={`dom ${isOpen ? 'is-open' : ''}`}>
+            <button className="dom__head" onClick={() => toggle(domain)}>
+              <span className="dom__dot" style={{ background: DOMAIN_COLORS_CSS[domain] || 'var(--fg-3)' }} />
+              <span className="dom__name">{catInfo ? catInfo.name : domain}</span>
+              <span className={`pulse pulse--${isOpen ? 'live' : 'steady'}`}>
+                <span className="pulse__ring" /><span className="pulse__core" />
               </span>
-              {isOpen ? <ChevronDown className="h-3 w-3 opacity-60" /> : <ChevronRight className="h-3 w-3 opacity-60" />}
+              <svg className="dom__chev" width="10" height="10" viewBox="0 0 10 10">
+                <path d="M2 3.5 L5 6.5 L8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </button>
-
             {isOpen && (
-              <div className="ml-2 mt-0.5 space-y-2 pb-1">
+              <ul className="dom__list">
                 {Object.entries(subdomains).map(([subdomain, cards]) => (
-                  <div key={subdomain} className="pl-2 border-l-2 border-gray-200 dark:border-gray-700">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1 px-1">
-                      {SUBCATEGORY_LABELS[subdomain] || subdomain}
-                    </p>
-                    {cards.map((card) => (
-                      <button
-                        key={card.id}
-                        onClick={() => navigate(`/feed/${card.id}`)}
-                        className="w-full text-left px-2 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors group"
-                      >
-                        <p className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2 leading-snug group-hover:text-primary-600 dark:group-hover:text-primary-400">
-                          {card.title}
-                        </p>
-                        {card.pinned_count > 0 && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
-                            <Users className="h-2.5 w-2.5" /> {card.pinned_count}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
+                  <li key={subdomain} className="dom__item" onClick={() => cards[0] && navigate(`/feed/${cards[0].id}`)}>
+                    <span className="dom__itemName">{SUBCATEGORY_LABELS[subdomain] || subdomain}</span>
+                    <span className="dom__itemMeta">
+                      {cards.length >= 10 && <span className="dom__hot">hot</span>}
+                      <span className="dom__count">{cards.length}</span>
+                    </span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </div>
         );
       })}
-    </div>
+    </>
   );
 }
 
-function EmptyState({ message, action }) {
-  return (
-    <div className="col-span-full flex flex-col items-center justify-center py-20 text-center gap-4">
-      <div className="text-5xl opacity-40">📭</div>
-      <p className="text-secondary-500 dark:text-gray-400 text-sm max-w-xs leading-relaxed">{message}</p>
-      {action}
-    </div>
-  );
-}
+/* Recommendation card — self-contained article from cron search */
+function RecCard({ rec }) {
+  const accentColor = DOMAIN_COLORS_CSS[rec.domain] || DOMAIN_COLORS_CSS.OTH;
+  const catInfo = CATEGORIES.find((c) => c.id === rec.domain);
+  const sourceIcon = SOURCE_ICONS[rec.source_type] || '🔗';
 
-function LoginPrompt() {
   return (
-    <div className="col-span-full flex flex-col items-center justify-center py-20 gap-5 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center">
-        <LogIn className="h-7 w-7 text-primary-600 dark:text-primary-400" />
+    <article
+      className="card card--research"
+      style={{ cursor: rec.source_url ? 'pointer' : 'default' }}
+      onClick={() => rec.source_url && window.open(rec.source_url, '_blank', 'noopener')}
+    >
+      {/* Reason badge */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 4,
+        fontSize: 'var(--t-micro)', color: 'var(--accent)', fontWeight: 500,
+        marginBottom: 4,
+      }}>
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+          <path d="M6 1 L7.5 4.5 L11 5 L8.5 7.5 L9 11 L6 9.5 L3 11 L3.5 7.5 L1 5 L4.5 4.5Z" stroke="currentColor" strokeWidth="1.2" fill="none"/>
+        </svg>
+        {rec.reason}
       </div>
-      <div>
-        <p className="text-secondary-800 dark:text-gray-200 font-semibold text-base">Sign in to your feed</p>
-        <p className="text-sm text-secondary-500 dark:text-gray-400 mt-1 max-w-xs">
-          Save cards from the Global Feed and create custom research cards.
+
+      {/* Header */}
+      <header className="card__head">
+        <span className="card__kind">
+          <span>{sourceIcon}</span>
+          {rec.source_type === 'google_news' ? 'News' : rec.source_type === 'reddit' ? 'Reddit' : rec.source_type === 'youtube' ? 'YouTube' : 'Web'}
+        </span>
+        {rec.subdomain && (
+          <span className="tag tag--code">{SUBCATEGORY_LABELS[rec.subdomain] || rec.subdomain}</span>
+        )}
+        {!rec.subdomain && rec.domain && <span className="tag tag--code">{rec.domain}</span>}
+        {rec.batch_label && (
+          <span className="meta" style={{ marginLeft: 'auto', textTransform: 'capitalize' }}>{rec.batch_label}</span>
+        )}
+      </header>
+
+      {/* Title */}
+      <h3 className="card__title" style={{ fontSize: 'var(--t-body)', lineHeight: 1.4 }}>
+        {rec.title}
+      </h3>
+
+      {/* Summary */}
+      {rec.summary && (
+        <p className="card__summary" style={{ fontSize: 'var(--t-meta)' }}>
+          {rec.summary.slice(0, 300)}{rec.summary.length > 300 ? '...' : ''}
         </p>
-      </div>
-      <div className="flex items-center gap-3">
-        <Link to="/login" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold shadow-sm transition-colors">
-          <LogIn className="h-4 w-4" /> Sign in
-        </Link>
-        <Link to="/register" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-secondary-200 dark:border-gray-600 text-secondary-700 dark:text-gray-300 text-sm font-semibold hover:bg-secondary-50 dark:hover:bg-gray-700 transition-colors">
-          Create account
-        </Link>
-      </div>
-    </div>
-  );
-}
+      )}
 
-function FeedGrid({ cards, myPins, onPin, onUnpin }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-      {cards.map((card) => {
-        const pinned = myPins.some((p) => p.card_id === card.id);
-        return (
-          <FeedCard
-            key={card.id}
-            card={card}
-            isPinned={pinned}
-            onPin={onPin}
-            onUnpin={onUnpin}
-          />
-        );
-      })}
-    </div>
+      {/* Domain chip */}
+      {catInfo && (
+        <div className="card__chips">
+          <span className="chip chip--tiny" style={{ '--chipColor': accentColor }}>
+            <span className="chip__dot" />
+            {catInfo.name}
+          </span>
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer className="card__foot">
+        {rec.score != null && (
+          <span className="meta">{rec.source_type === 'youtube' ? `${(rec.score / 1000).toFixed(1)}k views` : `${rec.score} pts`}</span>
+        )}
+        <span style={{ flex: 1 }} />
+        {rec.source_url && (
+          <span style={{ color: 'var(--accent)', fontSize: 'var(--t-meta)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
+            Open
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M4 10 L10 4 M10 4 H5.5 M10 4 V8.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </span>
+        )}
+      </footer>
+    </article>
   );
 }
 
 export default function HomePage({ isDark, toggleDark }) {
   const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('global');
   const [domain, setDomain] = useState('');
   const [subdomain, setSubdomain] = useState('');
@@ -160,9 +167,16 @@ export default function HomePage({ isDark, toggleDark }) {
   const [globalLoading, setGlobalLoading] = useState(false);
   const [globalError, setGlobalError] = useState('');
 
-  const [myPins, setMyPins] = useState([]);
+  // User's own created/researched cards
+  const [myCards, setMyCards] = useState([]);
   const [myLoading, setMyLoading] = useState(false);
-  const [myError, setMyError] = useState('');
+
+  // Pinned cards (for save/unsave)
+  const [myPins, setMyPins] = useState([]);
+
+  // Recommendations from cron
+  const [recs, setRecs] = useState([]);
+  const [recsLoading, setRecsLoading] = useState(false);
 
   const [trending, setTrending] = useState({});
   const [trendingLoading, setTrendingLoading] = useState(false);
@@ -183,192 +197,260 @@ export default function HomePage({ isDark, toggleDark }) {
     }
   }, [domain, subdomain]);
 
-  const loadMyFeed = useCallback(async () => {
+  const loadMyCards = useCallback(async () => {
     if (!isAuthenticated) return;
     setMyLoading(true);
-    setMyError('');
+    try {
+      const params = {};
+      if (domain) params.domain = domain;
+      const res = await feedCardsApi.getMyCards(params);
+      setMyCards(res.cards || []);
+    } catch { /* silent */ } finally {
+      setMyLoading(false);
+    }
+  }, [isAuthenticated, domain]);
+
+  const loadMyPins = useCallback(async () => {
+    if (!isAuthenticated) return;
     try {
       const pins = await feedCardsApi.getMyFeed();
       setMyPins(pins || []);
-    } catch {
-      setMyError('Failed to load your feed.');
-    } finally {
-      setMyLoading(false);
-    }
+    } catch { /* silent */ }
   }, [isAuthenticated]);
+
+  const loadRecs = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setRecsLoading(true);
+    try {
+      const params = {};
+      if (domain) params.domain = domain;
+      const res = await recommendationsApi.getMy(params);
+      setRecs(res.recommendations || []);
+    } catch { /* silent */ } finally {
+      setRecsLoading(false);
+    }
+  }, [isAuthenticated, domain]);
 
   const loadTrending = useCallback(async () => {
     setTrendingLoading(true);
     try {
       const res = await feedCardsApi.getTrending({ limit_per_subdomain: 3 });
       setTrending(res.trending || {});
-    } catch {
-      // silent — sidebar is non-critical
-    } finally {
+    } catch { /* silent */ } finally {
       setTrendingLoading(false);
     }
   }, []);
 
   useEffect(() => { loadGlobal(); }, [loadGlobal]);
   useEffect(() => { loadTrending(); }, [loadTrending]);
-  useEffect(() => { if (activeTab === 'your') loadMyFeed(); }, [activeTab, loadMyFeed]);
+  useEffect(() => { if (isAuthenticated) loadMyPins(); }, [loadMyPins, isAuthenticated]);
+  useEffect(() => { if (activeTab === 'your') loadMyCards(); }, [activeTab, loadMyCards]);
+  useEffect(() => { if (activeTab === 'recommended' && isAuthenticated) loadRecs(); }, [activeTab, loadRecs, isAuthenticated]);
 
-  const handlePin = () => loadMyFeed();
+  const handlePin = () => loadMyPins();
   const handleUnpin = (cardId) => setMyPins((prev) => prev.filter((p) => p.card_id !== cardId));
 
-  const myCards = myPins.map((p) => p.card).filter(Boolean);
-  const filteredMyCards = myCards.filter((c) => {
-    if (domain && c.domain !== domain) return false;
-    if (subdomain && c.subdomain !== subdomain) return false;
-    return true;
-  });
+  const displayCards = activeTab === 'global' ? globalCards : activeTab === 'your' ? myCards : [];
+  const loading = activeTab === 'global' ? globalLoading : activeTab === 'your' ? myLoading : recsLoading;
+
+  const refreshCurrent = () => {
+    if (activeTab === 'global') loadGlobal();
+    else if (activeTab === 'your') loadMyCards();
+    else loadRecs();
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
+    <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
       <Header isDark={isDark} toggleDark={toggleDark} />
 
-      <div className="container mx-auto px-4 py-6 max-w-7xl">
+      <main className="main" style={{ maxWidth: 1400, margin: '0 auto', padding: '0 24px' }}>
         {/* Page header */}
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">Intelligence Feed</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Global news & research, structured by domain</p>
+        <div className="page">
+          <div className="page__title">
+            <h1 className="display">Intelligence<br/><em>Feed</em></h1>
+            <p className="page__sub">
+              Global news &amp; research, structured by domain.<br/>
+              Now tracking <strong>{globalCards.length} cards</strong> across <strong>5 domains</strong>.
+            </p>
           </div>
-          <Link
-            to="/custom/browser"
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold shadow-sm transition-colors"
-          >
-            <Plus className="h-4 w-4" /> New Research Card
-          </Link>
+          <div className="page__actions">
+            <div className="metric">
+              <span className="eyebrow">Last sync</span>
+              <span className="metric__val mono">{new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} UTC</span>
+            </div>
+            <div className="metric">
+              <span className="eyebrow">Cards today</span>
+              <span className="metric__val">{globalCards.length}</span>
+            </div>
+            <Link to="/custom/browser" className="btn btn--primary btn--lg">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2V12 M2 7H12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+              New Research Card
+            </Link>
+          </div>
         </div>
 
-        <div className="flex gap-5">
-          {/* Left sidebar — Trending */}
-          <aside className="hidden lg:flex flex-col w-60 xl:w-64 flex-shrink-0 gap-3">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden sticky top-4">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-                <span className="flex items-center gap-1.5 text-xs font-bold text-gray-700 dark:text-gray-300">
-                  <TrendingUp className="h-3.5 w-3.5 text-primary-500" /> Trending
-                </span>
-                {trendingLoading && (
-                  <div className="w-3 h-3 border border-gray-300 border-t-transparent rounded-full animate-spin" />
-                )}
-              </div>
-              <div className="p-3 max-h-[calc(100vh-140px)] overflow-y-auto">
-                <TrendingSidebar trending={trending} />
-              </div>
+        {/* Layout: sidebar + feed */}
+        <div className="layout">
+          {/* Sidebar */}
+          <aside className="sidebar">
+            <div className="sidebar__head">
+              <span className="eyebrow sidebar__title">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 9 L5 6 L7 8 L10 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                Trending
+              </span>
+              {trendingLoading && (
+                <div style={{ width: 12, height: 12, border: '1.5px solid var(--fg-3)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+              )}
+            </div>
+            <div className="sidebar__scroll">
+              <TrendingSidebar trending={trending} navigate={navigate} />
+            </div>
+            <div className="sidebar__foot">
+              <span className="meta">5 domains</span>
+              <span className="meta sidebar__live">
+                <span className="pulse pulse--live"><span className="pulse__ring" /><span className="pulse__core" /></span>
+                Live
+              </span>
             </div>
           </aside>
 
-          {/* Main content */}
-          <main className="flex-1 min-w-0 space-y-5">
-            {/* Tabs */}
-            <div className="flex items-center gap-1 p-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 w-fit shadow-sm">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all',
-                    activeTab === tab.id
-                      ? 'bg-primary-600 text-white shadow'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white',
-                  )}
-                >
-                  {tab.icon} {tab.label}
+          {/* Feed */}
+          <section className="feed">
+            {/* Segmented control */}
+            <div className="filters">
+              <div className="segmented">
+                <button className={`seg ${activeTab === 'global' ? 'is-on' : ''}`} onClick={() => setActiveTab('global')}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3"/><path d="M1.5 6 H10.5 M6 1.5 Q9 6 6 10.5 M6 1.5 Q3 6 6 10.5" stroke="currentColor" strokeWidth="1.3"/></svg>
+                  Global Feed
                 </button>
-              ))}
+                <button className={`seg ${activeTab === 'your' ? 'is-on' : ''}`} onClick={() => setActiveTab('your')}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2" stroke="currentColor" strokeWidth="1.3"/><path d="M2 10 Q2 7 6 7 Q10 7 10 10" stroke="currentColor" strokeWidth="1.3"/></svg>
+                  Your Cards
+                </button>
+                <button className={`seg ${activeTab === 'recommended' ? 'is-on' : ''}`} onClick={() => setActiveTab('recommended')}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1 L7.5 4.5 L11 5 L8.5 7.5 L9 11 L6 9.5 L3 11 L3.5 7.5 L1 5 L4.5 4.5Z" stroke="currentColor" strokeWidth="1.2" fill="none"/></svg>
+                  For You
+                </button>
+              </div>
             </div>
 
-            {/* Filter bar */}
             <FilterBar
               domain={domain} setDomain={setDomain}
               subdomain={subdomain} setSubdomain={setSubdomain}
               hoursBack={hoursBack} setHoursBack={setHoursBack}
             />
 
-            {/* Global feed */}
-            {activeTab === 'global' && (
-              <section>
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-medium text-gray-400 dark:text-gray-500">
-                    {globalCards.length} cards
-                  </span>
-                  <button
-                    onClick={loadGlobal}
-                    className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    title="Refresh"
-                  >
-                    <RefreshCw className={cn('h-4 w-4 text-gray-400', globalLoading && 'animate-spin')} />
-                  </button>
+            {/* Feed status */}
+            <div className="feed__status">
+              <span className="meta">
+                {activeTab === 'recommended' ? `${recs.length} recommendations` : `${displayCards.length} cards`}
+              </span>
+              <span className="feed__sep">·</span>
+              <span className="meta">
+                {activeTab === 'global' ? 'trending & domain cards' : activeTab === 'your' ? 'your research' : 'personalized from Google News, Reddit & YouTube'}
+              </span>
+              <button className="iconbtn" title="Refresh" style={{ marginLeft: 'auto' }} onClick={refreshCurrent}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={loading ? { animation: 'spin 1s linear infinite' } : undefined}>
+                  <path d="M2 7 A5 5 0 0 1 12 7 M12 4 V7 H9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M12 7 A5 5 0 0 1 2 7 M2 10 V7 H5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+
+            {/* Error */}
+            {globalError && activeTab === 'global' && (
+              <p style={{ color: 'var(--signal-critical)', fontSize: 'var(--t-meta)', marginBottom: 12 }}>{globalError}</p>
+            )}
+
+            {/* Signed-out overlay for Your Cards / For You */}
+            {(activeTab === 'your' || activeTab === 'recommended') && !isAuthenticated ? (
+              <div className="signedout">
+                <div className="signedout__preview">
+                  {[1, 2, 3].map(i => (
+                    <article key={i} className="card card--ghost">
+                      <span className="card__kind">Research</span>
+                      <h3 className="card__title" style={{ fontSize: 'var(--t-body)' }}>Preview research title {i}</h3>
+                      <p className="card__summary" style={{ fontSize: 'var(--t-meta)' }}>Signal-grade summary hidden until you sign in.</p>
+                    </article>
+                  ))}
                 </div>
-
-                {globalError && <p className="text-sm text-red-600 dark:text-red-400 mb-4">{globalError}</p>}
-
-                {globalLoading && !globalCards.length ? (
-                  <div className="flex justify-center py-20">
-                    <div className="w-8 h-8 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
-                  </div>
-                ) : globalCards.length === 0 ? (
-                  <EmptyState
-                    message="No global feed cards yet. Admins can seed domain cards from the Admin panel."
-                    action={
-                      <Link to="/custom/browser" className="text-sm text-primary-600 dark:text-primary-400 font-semibold hover:underline">
-                        Create a research card →
-                      </Link>
-                    }
-                  />
-                ) : (
-                  <FeedGrid cards={globalCards} myPins={myPins} onPin={handlePin} onUnpin={handleUnpin} />
-                )}
-              </section>
-            )}
-
-            {/* Your feed */}
-            {activeTab === 'your' && (
-              <section>
-                {!isAuthenticated ? (
-                  <LoginPrompt />
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="text-xs font-medium text-gray-400 dark:text-gray-500">
-                        {filteredMyCards.length} saved cards
-                      </span>
-                      <button
-                        onClick={loadMyFeed}
-                        className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                        title="Refresh"
-                      >
-                        <RefreshCw className={cn('h-4 w-4 text-gray-400', myLoading && 'animate-spin')} />
-                      </button>
+                <div className="signedout__overlay">
+                  <div className="empty-state">
+                    <div className="empty-state__icon">
+                      <svg width="26" height="26" viewBox="0 0 26 26" fill="none"><path d="M6 13h14 M15 8 l5 5 -5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </div>
-
-                    {myError && <p className="text-sm text-red-600 dark:text-red-400 mb-4">{myError}</p>}
-
-                    {myLoading && !myCards.length ? (
-                      <div className="flex justify-center py-20">
-                        <div className="w-8 h-8 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
-                      </div>
-                    ) : filteredMyCards.length === 0 ? (
-                      <EmptyState
-                        message="Your feed is empty. Add cards from the Global Feed to see them here."
-                        action={
-                          <button onClick={() => setActiveTab('global')} className="text-sm text-primary-600 dark:text-primary-400 font-semibold hover:underline">
-                            Browse global feed →
-                          </button>
-                        }
-                      />
-                    ) : (
-                      <FeedGrid cards={filteredMyCards} myPins={myPins} onPin={handlePin} onUnpin={handleUnpin} />
-                    )}
-                  </>
-                )}
-              </section>
+                    <h3 className="empty-state__title">
+                      {activeTab === 'your' ? 'Sign in to see your cards' : 'Sign in for personalized feed'}
+                    </h3>
+                    <p className="empty-state__body">
+                      {activeTab === 'your'
+                        ? 'Your research cards are private and only visible to you.'
+                        : 'Get recommendations from Google News, Reddit & YouTube based on your interests.'}
+                    </p>
+                    <div className="empty-state__actions">
+                      <Link to="/login" className="btn btn--primary">Sign in</Link>
+                      <Link to="/register" className="btn">Create account</Link>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : loading && (activeTab !== 'recommended' ? displayCards.length === 0 : recs.length === 0) ? (
+              <div className="empty">
+                <div style={{ width: 32, height: 32, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+              </div>
+            ) : activeTab === 'recommended' ? (
+              /* For You — recommendation articles */
+              recs.length === 0 ? (
+                <div className="empty">
+                  <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ color: 'var(--fg-4)' }}>
+                    <path d="M20 6 L23 16 L34 17 L26 24 L28 34 L20 29 L12 34 L14 24 L6 17 L17 16Z" stroke="currentColor" strokeWidth="1.2" fill="none"/>
+                  </svg>
+                  <p className="empty__text">
+                    No recommendations yet. Select your domain interests during registration or in your profile. The system searches Google News, Reddit &amp; YouTube at 6 AM, 2 PM &amp; 8 PM IST.
+                  </p>
+                  <Link to="/register" className="btn btn--primary">Update interests</Link>
+                </div>
+              ) : (
+                <div className="grid">
+                  {recs.map((rec) => (
+                    <RecCard key={rec.id} rec={rec} />
+                  ))}
+                </div>
+              )
+            ) : displayCards.length === 0 ? (
+              <div className="empty">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ color: 'var(--fg-4)' }}>
+                  <circle cx="20" cy="20" r="14" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3"/>
+                  <path d="M14 20 L18 24 L26 16" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <p className="empty__text">
+                  {activeTab === 'global'
+                    ? 'No global feed cards yet. Create a research card to get started.'
+                    : 'You haven\'t created any research cards yet. Start a browser research to create one.'}
+                </p>
+                <Link to="/custom/browser" className="btn btn--primary">Create a research card</Link>
+              </div>
+            ) : (
+              <div className="grid">
+                {displayCards.map((card) => {
+                  const pinned = myPins.some((p) => p.card_id === card.id);
+                  return (
+                    <FeedCard
+                      key={card.id}
+                      card={card}
+                      isPinned={pinned}
+                      onPin={handlePin}
+                      onUnpin={handleUnpin}
+                    />
+                  );
+                })}
+              </div>
             )}
-          </main>
+          </section>
         </div>
-      </div>
+      </main>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
