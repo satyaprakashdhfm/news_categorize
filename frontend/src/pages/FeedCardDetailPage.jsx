@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Header from '@/components/Header';
 import NewsCard from '@/components/NewsCard';
@@ -105,6 +105,62 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [textSearch, setTextSearch] = useState('');
+  const [rerunStatus, setRerunStatus] = useState('idle'); // idle | running | done | error
+  const [rerunLog, setRerunLog] = useState([]);
+  const rerunAbort = useRef(null);
+
+  const handleRerun = async () => {
+    if (!card || rerunStatus === 'running') return;
+    setRerunStatus('running');
+    setRerunLog([]);
+    const token = localStorage.getItem('curio_token');
+    const controller = new AbortController();
+    rerunAbort.current = controller;
+    try {
+      const resp = await fetch('/api/browser-research/live-browser-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ query: card.title, domain: card.domain || '', subdomain: card.subdomain || '' }),
+        signal: controller.signal,
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      let runId = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            try {
+              const d = JSON.parse(line.slice(5).trim());
+              if (d.type === 'step') setRerunLog((p) => [...p.slice(-4), d.message]);
+              if (d.type === 'done' && d.run_id) runId = d.run_id;
+            } catch { /* skip malformed */ }
+          }
+        }
+      }
+      if (runId) {
+        await feedCardsApi.attachRun({ run_id: runId, query: card.title, title: card.title, domain: card.domain, subdomain: card.subdomain });
+        const updated = await feedCardsApi.getCard(cardId);
+        setCard(updated);
+        setRerunStatus('done');
+        setRerunLog(['Done! Fresh results loaded.']);
+        await loadItems();
+      } else {
+        setRerunStatus('done');
+        setRerunLog(['Research complete.']);
+        await loadItems();
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') { setRerunStatus('error'); setRerunLog(['Research failed. Try again.']); }
+      else { setRerunStatus('idle'); setRerunLog([]); }
+    }
+  };
 
   useEffect(() => {
     feedCardsApi.getCard(cardId)
@@ -205,7 +261,37 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
               )}
               {card.pinned_count > 0 && <span className="meta">{card.pinned_count} following</span>}
               {card.created_at && <span className="meta">{formatTimeAgo(card.created_at)}</span>}
+              <button
+                onClick={rerunStatus === 'running' ? () => { rerunAbort.current?.abort(); setRerunStatus('idle'); } : handleRerun}
+                className="btn btn--primary"
+                style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', padding: '5px 14px' }}
+              >
+                {rerunStatus === 'running' ? (
+                  <>
+                    <div style={{ width: 10, height: 10, border: '1.5px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    Stop
+                  </>
+                ) : (
+                  <>
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M10 6A4 4 0 1 1 6 2M6 2V0M6 2L8 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    Get Latest News
+                  </>
+                )}
+              </button>
             </div>
+
+            {/* Live rerun log */}
+            {rerunLog.length > 0 && (
+              <div style={{
+                marginTop: 4, padding: '10px 14px', borderRadius: 'var(--r-md)',
+                background: rerunStatus === 'error' ? 'rgba(240,110,110,0.08)' : 'var(--accent-soft)',
+                border: `1px solid ${rerunStatus === 'error' ? 'rgba(240,110,110,0.2)' : 'rgba(127,212,209,0.2)'}`,
+                fontSize: 'var(--t-micro)', color: rerunStatus === 'error' ? 'var(--signal-critical)' : 'var(--accent)',
+                display: 'flex', flexDirection: 'column', gap: 2,
+              }}>
+                {rerunLog.map((msg, i) => <span key={i}>{msg}</span>)}
+              </div>
+            )}
           </div>
         )}
 
