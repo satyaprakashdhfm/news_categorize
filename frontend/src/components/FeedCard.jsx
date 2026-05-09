@@ -133,6 +133,14 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin, reaso
         <span className="card__meta">
           <ConfidenceBar value={card.signal_strength || 60} />
           <time className="meta">{card.created_at ? formatTimeAgo(card.created_at) : ''}</time>
+          {card.pinned_count > 0 && (
+            <span className="meta" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                <path d="M3 1.5 H9 Q10.5 1.5 10.5 3 V10.5 L6 8 L1.5 10.5 V3 Q1.5 1.5 3 1.5Z" stroke="currentColor" strokeWidth="1.3" fill="none"/>
+              </svg>
+              {card.pinned_count}
+            </span>
+          )}
         </span>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>

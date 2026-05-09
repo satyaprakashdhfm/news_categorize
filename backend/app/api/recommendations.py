@@ -26,6 +26,8 @@ def get_my_recommendations(
     )
     if domain:
         q = q.filter(UserRecommendation.domain == domain.upper())
+    elif current_user.interests:
+        q = q.filter(UserRecommendation.domain.in_(current_user.interests))
     if subdomain:
         q = q.filter(UserRecommendation.subdomain == subdomain.upper())
     q = q.order_by(UserRecommendation.created_at.desc())
