@@ -443,20 +443,38 @@ def attach_run(
 
     # Case 2: user research — use AI to check if query matches any existing card's topic
     query_norm = payload.query.strip().lower()
-    existing_cards = db.query(FeedCard).all()  # check domain cards too
+    existing_cards = db.query(FeedCard).all()
 
-    # Pre-filter with fast lexical score to avoid unnecessary AI calls
+    # Stopwords to ignore when extracting content words
+    _MERGE_STOPWORDS = {
+        "what", "are", "the", "new", "latest", "updates", "update", "on", "about",
+        "for", "and", "or", "of", "in", "to", "a", "an", "is", "it", "with",
+        "how", "why", "when", "where", "who", "which", "news", "recent", "current",
+        "give", "show", "get", "find", "tell", "me", "us", "best", "top", "now",
+    }
+
+    def _content_words(text: str) -> set[str]:
+        words = re.findall(r"[a-z0-9]+", text.lower())
+        return {w for w in words if len(w) > 3 and w not in _MERGE_STOPWORDS}
+
+    query_content = _content_words(query_norm)
+
+    # Pre-filter: require BOTH high lexical ratio AND at least 1 shared content word
     candidates = []
     for card in existing_cards:
-        ratio = SequenceMatcher(None, query_norm, (card.title or "").strip().lower()).ratio()
-        if ratio >= 0.35:
-            candidates.append((ratio, card))
+        card_norm = (card.title or "").strip().lower()
+        ratio = SequenceMatcher(None, query_norm, card_norm).ratio()
+        if ratio < 0.65:
+            continue
+        # Reject if no content-word overlap — catches "updates on X" vs "updates on Y"
+        card_content = _content_words(card_norm)
+        if query_content and card_content and not query_content.intersection(card_content):
+            continue
+        candidates.append((ratio, card))
     candidates.sort(key=lambda x: x[0], reverse=True)
 
-    for ratio_val, candidate in candidates[:5]:
-        # High-similarity title: merge directly without LLM — prevents Ollama failures
-        # creating duplicate cards for the exact same query run again.
-        is_near_match = ratio_val >= 0.80
+    for ratio_val, candidate in candidates[:3]:
+        is_near_match = ratio_val >= 0.85
         if is_near_match or _ai_same_topic(payload.query, candidate.title or ""):
             candidate.run_id = payload.run_id
             db.commit()
