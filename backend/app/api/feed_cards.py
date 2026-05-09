@@ -222,8 +222,8 @@ def create_card(
     if payload.type == "custom" and not payload.run_id:
         raise HTTPException(status_code=400, detail="run_id required for custom cards")
 
-    # Custom cards are private by default; only admins can set global
-    is_global = payload.is_global if current_user.role == "admin" else False
+    # Custom research cards are always global; domain cards require admin
+    is_global = True if payload.type == "custom" else (payload.is_global if current_user.role == "admin" else False)
 
     card = FeedCard(
         id=str(uuid.uuid4()),
@@ -415,12 +415,12 @@ def attach_run(
             subdomain=payload.subdomain.upper(),
             run_id=payload.run_id,
             created_by=current_user.id if current_user else None,
-            is_global=False,  # user-created cards are private
+            is_global=True,
         )
         db.add(card)
         db.commit()
         db.refresh(card)
-        return AttachRunResponse(merged=False, card_id=card.id, message="Created new card (private)")
+        return AttachRunResponse(merged=False, card_id=card.id, message="Created new card (global)")
 
     # Case 2: user research — use AI to check if query matches any existing card's topic
     query_norm = payload.query.strip().lower()
@@ -463,7 +463,7 @@ def attach_run(
         subdomain=(payload.subdomain.upper() if payload.subdomain else auto_subdomain),
         run_id=payload.run_id,
         created_by=current_user.id if current_user else None,
-        is_global=False,  # user-created cards are private
+        is_global=True,
     )
     db.add(card)
     db.commit()
