@@ -155,11 +155,20 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
 
       if (runId) {
         await feedCardsApi.attachRun({ run_id: runId, query: card.title, title: card.title, domain: card.domain, subdomain: card.subdomain });
-        const updated = await feedCardsApi.getCard(cardId);
-        setCard(updated);
+        // Load items directly from the new run_id — never use loadItems() here
+        // because its useCallback closure still holds the OLD card.run_id.
+        try {
+          const runData = await browserResearchApi.getRun(runId);
+          setItems(runData.blogs || []);
+          setItemType('browser');
+          setSourceFilter('all');
+          setVisibleCount(PAGE_SIZE);
+          setTextSearch('');
+        } catch { /* items may already be visible from SSE */ }
+        // Refresh card metadata in background (non-blocking)
+        feedCardsApi.getCard(cardId).then(setCard).catch(() => {});
         setRerunStatus('done');
         setRerunLog((p) => [...p, 'Done! Fresh results loaded.']);
-        await loadItems();
       } else {
         setRerunStatus('done');
         setRerunLog((p) => [...p, 'Research done (no new run created).']);
