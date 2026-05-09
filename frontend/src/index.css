@@ -629,9 +629,11 @@ html.dark {
   background: var(--accent);
 }
 
-/* Domain card spine */
-.card--domain { padding-left: 24px; }
+/* Domain and research card spine */
+.card--domain,
+.card--research { padding-left: 24px; }
 .card--domain .card__spine,
+.card--research .card__spine,
 .card--signal .card__spine {
   position: absolute;
   left: 0;

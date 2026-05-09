@@ -74,9 +74,9 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin, reaso
     <article
       onClick={() => navigate(`/feed/${card.id}`)}
       className={`card ${isDomain ? 'card--domain' : 'card--research'}`}
-      style={isDomain ? { '--cardAccent': accentColor } : undefined}
+      style={{ '--cardAccent': accentColor }}
     >
-      {isDomain && <div className="card__spine" />}
+      <div className="card__spine" />
 
       {/* Recommendation reason badge */}
       {reason && (
