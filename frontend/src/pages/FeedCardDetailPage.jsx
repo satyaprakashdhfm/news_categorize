@@ -128,32 +128,41 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
       const dec = new TextDecoder();
       let buf = '';
       let runId = null;
+
+      const processLines = (chunk) => {
+        buf += chunk;
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          try {
+            const d = JSON.parse(line.slice(5).trim());
+            if (d.type === 'step') setRerunLog((p) => [...p, d.payload].slice(-40));
+            if (d.type === 'result' && d.payload?.run_id) runId = d.payload.run_id;
+          } catch { /* skip malformed */ }
+        }
+      };
+
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop();
-        for (const line of lines) {
-          if (line.startsWith('data:')) {
-            try {
-              const d = JSON.parse(line.slice(5).trim());
-              if (d.type === 'step') setRerunLog((p) => [...p, d.payload].slice(-40));
-              if (d.type === 'result' && d.payload?.run_id) runId = d.payload.run_id;
-            } catch { /* skip malformed */ }
-          }
+        if (done) {
+          // Flush any remaining bytes — the result event is often the last chunk
+          if (buf.trim()) processLines('\n');
+          break;
         }
+        processLines(dec.decode(value, { stream: true }));
       }
+
       if (runId) {
         await feedCardsApi.attachRun({ run_id: runId, query: card.title, title: card.title, domain: card.domain, subdomain: card.subdomain });
         const updated = await feedCardsApi.getCard(cardId);
         setCard(updated);
         setRerunStatus('done');
-        setRerunLog(['Done! Fresh results loaded.']);
+        setRerunLog((p) => [...p, 'Done! Fresh results loaded.']);
         await loadItems();
       } else {
         setRerunStatus('done');
-        setRerunLog(['Research complete.']);
+        setRerunLog((p) => [...p, 'Research done (no new run created).']);
         await loadItems();
       }
     } catch (e) {

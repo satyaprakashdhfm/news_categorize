@@ -176,13 +176,10 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
       const decoder = new TextDecoder();
       let buffer = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+      const processBuffer = (chunk) => {
+        buffer += chunk;
         const lines = buffer.split('\n');
-        buffer = lines.pop();
-
+        buffer = lines.pop() ?? '';
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           let parsed;
@@ -215,6 +212,16 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
             setStreamPhase('error');
           }
         }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          // Flush remaining buffer — result event is always the last chunk
+          if (buffer.trim()) processBuffer('\n');
+          break;
+        }
+        processBuffer(decoder.decode(value, { stream: true }));
       }
     } catch (err) {
       if (err.name === 'AbortError') { setStreamPhase('idle'); setError(''); }
