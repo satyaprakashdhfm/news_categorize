@@ -74,7 +74,6 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
   const [processingLog, setProcessingLog] = useState([]);
   const [streamPhase, setStreamPhase] = useState('idle');
   const abortRef = useRef(null);
-  const [liveScreenshot, setLiveScreenshot] = useState(null);
   const [currentUrl, setCurrentUrl] = useState('');
 
   const [cardTitle, setCardTitle] = useState('');
@@ -148,7 +147,6 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
     setProcessingLog([]);
     setStreamPhase('streaming');
     setData(null);
-    setLiveScreenshot(null);
     setCurrentUrl('');
     setCardTitle(effectiveQuery);
     setSaveError('');
@@ -190,9 +188,7 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
           let parsed;
           try { parsed = JSON.parse(line.slice(6)); } catch { continue; }
 
-          if (parsed.type === 'screenshot') {
-            setLiveScreenshot(parsed.payload);
-          } else if (parsed.type === 'url') {
+          if (parsed.type === 'url') {
             setCurrentUrl(parsed.payload);
           } else if (parsed.type === 'step') {
             setProcessingLog((prev) => [`${ts()} ${parsed.payload}`, ...prev].slice(0, 60));
@@ -357,63 +353,19 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
               </form>
             </section>
 
-            {/* Live browser viewport */}
-            {(loading || liveScreenshot) && (
-              <section style={{
-                background: 'var(--bg-1)', borderRadius: 'var(--r-lg)',
-                border: '1px solid var(--line-2)', overflow: 'hidden',
+            {/* Current URL bar (shown while loading, no screenshots) */}
+            {loading && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
+                background: 'var(--bg-1)', border: '1px solid var(--line-1)',
+                borderRadius: 'var(--r-lg)',
               }}>
-                {/* Browser chrome */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px',
-                  background: 'var(--bg-2)', borderBottom: '1px solid var(--line-1)',
-                }}>
-                  <div style={{ display: 'flex', gap: 5 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--signal-critical)', opacity: 0.8 }} />
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--signal-warn)', opacity: 0.8 }} />
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--signal-positive)', opacity: 0.8 }} />
-                  </div>
-                  <div style={{
-                    flex: 1, margin: '0 8px', padding: '4px 12px', borderRadius: 'var(--r-md)',
-                    background: 'var(--bg-3)', fontFamily: 'var(--font-mono)', fontSize: 'var(--t-micro)',
-                    color: 'var(--fg-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    display: 'flex', alignItems: 'center', gap: 8,
-                  }}>
-                    {loading && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', animation: 'step-pulse 1.5s ease-in-out infinite', flexShrink: 0 }} />}
-                    {currentUrl || 'about:blank'}
-                  </div>
-                  <span style={{ fontSize: 'var(--t-micro)', fontWeight: 600, color: loading ? 'var(--signal-warn)' : 'var(--signal-positive)' }}>
-                    {loading ? 'Browsing...' : 'Done'}
-                  </span>
-                </div>
-                {/* Viewport */}
-                <div style={{ position: 'relative', background: 'var(--bg-2)', minHeight: 200 }}>
-                  {liveScreenshot ? (
-                    <img
-                      src={`data:image/jpeg;base64,${liveScreenshot}`}
-                      alt="Live browser view"
-                      style={{ width: '100%', display: 'block' }}
-                    />
-                  ) : (
-                    <div className="empty" style={{ minHeight: 200 }}>
-                      <div style={{ width: 32, height: 32, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                      <span className="meta">Launching browser...</span>
-                    </div>
-                  )}
-                  {loading && liveScreenshot && (
-                    <div style={{
-                      position: 'absolute', bottom: 12, right: 12,
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      background: 'rgba(0,0,0,0.6)', padding: '4px 12px',
-                      borderRadius: 'var(--r-pill)', backdropFilter: 'blur(4px)',
-                      fontSize: 'var(--t-micro)', fontWeight: 600, color: 'var(--fg-1)',
-                    }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--signal-critical)', animation: 'step-pulse 1.5s ease-in-out infinite' }} />
-                      LIVE
-                    </div>
-                  )}
-                </div>
-              </section>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--signal-warn)', animation: 'step-pulse 1.5s ease-in-out infinite', flexShrink: 0 }} />
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--t-micro)', color: 'var(--fg-3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {currentUrl || 'Launching browser...'}
+                </span>
+                <span style={{ fontSize: 'var(--t-micro)', fontWeight: 600, color: 'var(--signal-warn)', flexShrink: 0 }}>Browsing...</span>
+              </div>
             )}
 
             {/* Live feed panel */}

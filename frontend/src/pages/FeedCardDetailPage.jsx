@@ -138,8 +138,8 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
           if (line.startsWith('data:')) {
             try {
               const d = JSON.parse(line.slice(5).trim());
-              if (d.type === 'step') setRerunLog((p) => [...p.slice(-4), d.message]);
-              if (d.type === 'done' && d.run_id) runId = d.run_id;
+              if (d.type === 'step') setRerunLog((p) => [...p, d.payload].slice(-40));
+              if (d.type === 'result' && d.payload?.run_id) runId = d.payload.run_id;
             } catch { /* skip malformed */ }
           }
         }
@@ -281,15 +281,43 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
             </div>
 
             {/* Live rerun log */}
-            {rerunLog.length > 0 && (
-              <div style={{
-                marginTop: 4, padding: '10px 14px', borderRadius: 'var(--r-md)',
-                background: rerunStatus === 'error' ? 'rgba(240,110,110,0.08)' : 'var(--accent-soft)',
-                border: `1px solid ${rerunStatus === 'error' ? 'rgba(240,110,110,0.2)' : 'rgba(127,212,209,0.2)'}`,
-                fontSize: 'var(--t-micro)', color: rerunStatus === 'error' ? 'var(--signal-critical)' : 'var(--accent)',
-                display: 'flex', flexDirection: 'column', gap: 2,
-              }}>
-                {rerunLog.map((msg, i) => <span key={i}>{msg}</span>)}
+            {(rerunStatus === 'running' || rerunLog.length > 0) && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6,
+                  fontSize: 'var(--t-micro)', color: 'var(--fg-3)', fontWeight: 600,
+                }}>
+                  {rerunStatus === 'running' && (
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--signal-warn)', animation: 'step-pulse 1.5s ease-in-out infinite', flexShrink: 0 }} />
+                  )}
+                  {rerunStatus === 'running' ? 'Researching live...' : rerunStatus === 'error' ? 'Research failed' : 'Research complete'}
+                  {rerunLog.length > 0 && <span style={{ fontWeight: 400, opacity: 0.6 }}>{rerunLog.length} steps</span>}
+                </div>
+                <div style={{
+                  background: 'var(--bg-0)',
+                  border: `1px solid ${rerunStatus === 'error' ? 'rgba(240,110,110,0.25)' : 'var(--line-1)'}`,
+                  borderRadius: 'var(--r-md)', padding: '10px 14px',
+                  fontFamily: 'var(--font-mono)', fontSize: 11,
+                  maxHeight: 260, overflowY: 'auto',
+                  display: 'flex', flexDirection: 'column', gap: 3,
+                }}>
+                  {rerunLog.length === 0 ? (
+                    <span style={{ color: 'var(--fg-4)' }}>Starting browser research...</span>
+                  ) : rerunLog.map((msg, i) => {
+                    const isArrow = msg && msg.includes('→');
+                    const isError = msg && msg.toLowerCase().includes('error');
+                    const isDone = msg && (msg.toLowerCase().includes('done') || msg.toLowerCase().includes('complete'));
+                    return (
+                      <div key={i} style={{
+                        color: isError ? 'var(--signal-critical)' : isDone ? 'var(--signal-positive)' : isArrow ? 'var(--fg-3)' : 'var(--accent)',
+                        paddingLeft: isArrow ? 12 : 0,
+                        lineHeight: 1.5,
+                      }}>
+                        {isArrow ? '' : '› '}{msg}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
