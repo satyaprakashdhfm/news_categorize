@@ -1,8 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
-import { browserResearchApi, feedCardsApi } from '@/services/api';
+import { authApi, browserResearchApi, feedCardsApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
+
+const DOMAIN_OPTIONS = [
+  { id: 'TEC', label: 'Science & Technology', color: 'var(--domain-tech)' },
+  { id: 'ECO', label: 'Economy & Finance', color: 'var(--domain-econ)' },
+  { id: 'POL', label: 'Politics & Governance', color: 'var(--domain-policy)' },
+  { id: 'BUS', label: 'Business & Markets', color: 'var(--domain-biz)' },
+  { id: 'OTH', label: 'Other', color: 'var(--domain-others)' },
+];
 
 function fmtInt(value) {
   return Number(value || 0).toLocaleString();
@@ -32,7 +40,7 @@ function InitialsAvatar({ name }) {
 }
 
 export default function ProfilePage({ isDark, toggleDark }) {
-  const { user, isAuthenticated } = useAuth();
+  const { user, setUser, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   const [history, setHistory] = useState([]);
@@ -44,11 +52,16 @@ export default function ProfilePage({ isDark, toggleDark }) {
   const [runData, setRunData] = useState(null);
   const [runLoading, setRunLoading] = useState(false);
 
+  const [interests, setInterests] = useState([]);
+  const [interestsSaving, setInterestsSaving] = useState(false);
+  const [interestsSaved, setInterestsSaved] = useState(false);
+
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
       return;
     }
+    setInterests(user?.interests || []);
     loadHistory();
     loadPins();
   }, [isAuthenticated]);
@@ -84,6 +97,23 @@ export default function ProfilePage({ isDark, toggleDark }) {
       const res = await browserResearchApi.getRun(runId);
       setRunData(res);
     } catch { setRunData(null); } finally { setRunLoading(false); }
+  };
+
+  const toggleInterest = (id) => {
+    setInterests((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
+    setInterestsSaved(false);
+  };
+
+  const saveInterests = async () => {
+    setInterestsSaving(true);
+    try {
+      const updated = await authApi.updateInterests(interests);
+      setUser(updated);
+      setInterestsSaved(true);
+      setTimeout(() => setInterestsSaved(false), 2500);
+    } catch { /* silent */ } finally {
+      setInterestsSaving(false);
+    }
   };
 
   const joinedDate = user?.created_at
@@ -129,6 +159,47 @@ export default function ProfilePage({ isDark, toggleDark }) {
               </p>
               <p className="meta" style={{ marginTop: 2 }}>Research runs</p>
             </div>
+          </div>
+        </div>
+
+        {/* Interests */}
+        <div className="panel" style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <h2 style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>Domain Interests</h2>
+            <span className="meta">Used to generate your For You recommendations</span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+            {DOMAIN_OPTIONS.map((d) => {
+              const active = interests.includes(d.id);
+              return (
+                <button
+                  key={d.id}
+                  onClick={() => toggleInterest(d.id)}
+                  style={{
+                    padding: '6px 14px', borderRadius: 'var(--r-lg)', fontSize: 'var(--t-meta)',
+                    fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
+                    border: `1.5px solid ${active ? d.color : 'var(--line-1)'}`,
+                    background: active ? `color-mix(in srgb, ${d.color} 12%, var(--bg-1))` : 'var(--bg-1)',
+                    color: active ? d.color : 'var(--fg-3)',
+                  }}
+                >
+                  {active ? '✓ ' : ''}{d.label}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              className="btn btn--primary"
+              onClick={saveInterests}
+              disabled={interestsSaving}
+              style={{ minWidth: 120 }}
+            >
+              {interestsSaving ? 'Saving...' : interestsSaved ? '✓ Saved' : 'Save Interests'}
+            </button>
+            {interests.length === 0 && (
+              <span className="meta" style={{ color: 'var(--signal-warn)' }}>Select at least one domain to get recommendations</span>
+            )}
           </div>
         </div>
 

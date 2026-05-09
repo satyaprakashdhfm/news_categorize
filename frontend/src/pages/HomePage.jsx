@@ -78,7 +78,7 @@ function TrendingSidebar({ trending, navigate }) {
 }
 
 /* Recommendation card — self-contained article from cron search */
-function RecCard({ rec }) {
+function RecCard({ rec, onDismiss }) {
   const accentColor = DOMAIN_COLORS_CSS[rec.domain] || DOMAIN_COLORS_CSS.OTH;
   const catInfo = CATEGORIES.find((c) => c.id === rec.domain);
   const sourceIcon = SOURCE_ICONS[rec.source_type] || '🔗';
@@ -150,6 +150,15 @@ function RecCard({ rec }) {
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M4 10 L10 4 M10 4 H5.5 M10 4 V8.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </span>
         )}
+        {onDismiss && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDismiss(rec.id); }}
+            title="Dismiss"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-4)', fontSize: 16, lineHeight: 1, padding: '0 2px', marginLeft: 4 }}
+            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--signal-critical)'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--fg-4)'}
+          >×</button>
+        )}
       </footer>
     </article>
   );
@@ -171,8 +180,9 @@ export default function HomePage({ isDark, toggleDark }) {
   const [myCards, setMyCards] = useState([]);
   const [myLoading, setMyLoading] = useState(false);
 
-  // Pinned cards (for save/unsave)
+  // Pinned cards (saved feed)
   const [myPins, setMyPins] = useState([]);
+  const [savedLoading, setSavedLoading] = useState(false);
 
   // Recommendations from cron
   const [recs, setRecs] = useState([]);
@@ -212,10 +222,13 @@ export default function HomePage({ isDark, toggleDark }) {
 
   const loadMyPins = useCallback(async () => {
     if (!isAuthenticated) return;
+    setSavedLoading(true);
     try {
       const pins = await feedCardsApi.getMyFeed();
       setMyPins(pins || []);
-    } catch { /* silent */ }
+    } catch { /* silent */ } finally {
+      setSavedLoading(false);
+    }
   }, [isAuthenticated]);
 
   const loadRecs = useCallback(async () => {
@@ -245,17 +258,30 @@ export default function HomePage({ isDark, toggleDark }) {
   useEffect(() => { loadTrending(); }, [loadTrending]);
   useEffect(() => { if (isAuthenticated) loadMyPins(); }, [loadMyPins, isAuthenticated]);
   useEffect(() => { if (activeTab === 'your') loadMyCards(); }, [activeTab, loadMyCards]);
+  useEffect(() => { if (activeTab === 'saved' && isAuthenticated) loadMyPins(); }, [activeTab, isAuthenticated]);
   useEffect(() => { if (activeTab === 'recommended' && isAuthenticated) loadRecs(); }, [activeTab, loadRecs, isAuthenticated]);
 
   const handlePin = () => loadMyPins();
   const handleUnpin = (cardId) => setMyPins((prev) => prev.filter((p) => p.card_id !== cardId));
 
-  const displayCards = activeTab === 'global' ? globalCards : activeTab === 'your' ? myCards : [];
-  const loading = activeTab === 'global' ? globalLoading : activeTab === 'your' ? myLoading : recsLoading;
+  const handleDismissRec = async (recId) => {
+    setRecs((prev) => prev.filter((r) => r.id !== recId));
+    try { await recommendationsApi.markSeen([recId]); } catch { /* silent */ }
+  };
+
+  const displayCards = activeTab === 'global' ? globalCards
+    : activeTab === 'your' ? myCards
+    : activeTab === 'saved' ? myPins.filter((p) => p.card).map((p) => p.card)
+    : [];
+  const loading = activeTab === 'global' ? globalLoading
+    : activeTab === 'your' ? myLoading
+    : activeTab === 'saved' ? savedLoading
+    : recsLoading;
 
   const refreshCurrent = () => {
     if (activeTab === 'global') loadGlobal();
     else if (activeTab === 'your') loadMyCards();
+    else if (activeTab === 'saved') loadMyPins();
     else loadRecs();
   };
 
@@ -323,6 +349,10 @@ export default function HomePage({ isDark, toggleDark }) {
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3"/><path d="M1.5 6 H10.5 M6 1.5 Q9 6 6 10.5 M6 1.5 Q3 6 6 10.5" stroke="currentColor" strokeWidth="1.3"/></svg>
                   Global Feed
                 </button>
+                <button className={`seg ${activeTab === 'saved' ? 'is-on' : ''}`} onClick={() => setActiveTab('saved')}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 1.5 H9 Q10.5 1.5 10.5 3 V10.5 L6 8 L1.5 10.5 V3 Q1.5 1.5 3 1.5Z" stroke="currentColor" strokeWidth="1.3" fill="none"/></svg>
+                  My Feed
+                </button>
                 <button className={`seg ${activeTab === 'your' ? 'is-on' : ''}`} onClick={() => setActiveTab('your')}>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2" stroke="currentColor" strokeWidth="1.3"/><path d="M2 10 Q2 7 6 7 Q10 7 10 10" stroke="currentColor" strokeWidth="1.3"/></svg>
                   Your Cards
@@ -347,7 +377,10 @@ export default function HomePage({ isDark, toggleDark }) {
               </span>
               <span className="feed__sep">·</span>
               <span className="meta">
-                {activeTab === 'global' ? 'trending & domain cards' : activeTab === 'your' ? 'your research' : 'personalized from Google News, Reddit & YouTube'}
+                {activeTab === 'global' ? 'trending & domain cards'
+                  : activeTab === 'saved' ? 'your saved cards'
+                  : activeTab === 'your' ? 'your research'
+                  : 'personalized from Google News, Reddit & YouTube'}
               </span>
               <button className="iconbtn" title="Refresh" style={{ marginLeft: 'auto' }} onClick={refreshCurrent}>
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={loading ? { animation: 'spin 1s linear infinite' } : undefined}>
@@ -362,8 +395,8 @@ export default function HomePage({ isDark, toggleDark }) {
               <p style={{ color: 'var(--signal-critical)', fontSize: 'var(--t-meta)', marginBottom: 12 }}>{globalError}</p>
             )}
 
-            {/* Signed-out overlay for Your Cards / For You */}
-            {(activeTab === 'your' || activeTab === 'recommended') && !isAuthenticated ? (
+            {/* Signed-out overlay for My Feed / Your Cards / For You */}
+            {(activeTab === 'saved' || activeTab === 'your' || activeTab === 'recommended') && !isAuthenticated ? (
               <div className="signedout">
                 <div className="signedout__preview">
                   {[1, 2, 3].map(i => (
@@ -380,10 +413,14 @@ export default function HomePage({ isDark, toggleDark }) {
                       <svg width="26" height="26" viewBox="0 0 26 26" fill="none"><path d="M6 13h14 M15 8 l5 5 -5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </div>
                     <h3 className="empty-state__title">
-                      {activeTab === 'your' ? 'Sign in to see your cards' : 'Sign in for personalized feed'}
+                      {activeTab === 'saved' ? 'Sign in to see your saved feed'
+                        : activeTab === 'your' ? 'Sign in to see your cards'
+                        : 'Sign in for personalized feed'}
                     </h3>
                     <p className="empty-state__body">
-                      {activeTab === 'your'
+                      {activeTab === 'saved'
+                        ? 'Cards you save appear here — your personal reading list.'
+                        : activeTab === 'your'
                         ? 'Your research cards are private and only visible to you.'
                         : 'Get recommendations from Google News, Reddit & YouTube based on your interests.'}
                     </p>
@@ -406,17 +443,25 @@ export default function HomePage({ isDark, toggleDark }) {
                     <path d="M20 6 L23 16 L34 17 L26 24 L28 34 L20 29 L12 34 L14 24 L6 17 L17 16Z" stroke="currentColor" strokeWidth="1.2" fill="none"/>
                   </svg>
                   <p className="empty__text">
-                    No recommendations yet. Select your domain interests during registration or in your profile. The system searches Google News, Reddit &amp; YouTube at 6 AM, 2 PM &amp; 8 PM IST.
+                    No recommendations yet. Set your domain interests in your profile. The system searches Google News, Reddit &amp; YouTube at 6 AM, 2 PM &amp; 8 PM IST.
                   </p>
-                  <Link to="/register" className="btn btn--primary">Update interests</Link>
+                  <Link to="/profile" className="btn btn--primary">Update interests</Link>
                 </div>
               ) : (
                 <div className="grid">
                   {recs.map((rec) => (
-                    <RecCard key={rec.id} rec={rec} />
+                    <RecCard key={rec.id} rec={rec} onDismiss={handleDismissRec} />
                   ))}
                 </div>
               )
+            ) : activeTab === 'saved' && displayCards.length === 0 ? (
+              <div className="empty">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ color: 'var(--fg-4)' }}>
+                  <path d="M10 5 H30 Q34 5 34 9 V36 L20 28 L6 36 V9 Q6 5 10 5Z" stroke="currentColor" strokeWidth="1.2" fill="none"/>
+                </svg>
+                <p className="empty__text">No saved cards yet. Hit <strong>+ Save</strong> on any card in the Global Feed to add it here.</p>
+                <button className="btn btn--primary" onClick={() => setActiveTab('global')}>Browse Global Feed</button>
+              </div>
             ) : displayCards.length === 0 ? (
               <div className="empty">
                 <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ color: 'var(--fg-4)' }}>
@@ -433,7 +478,7 @@ export default function HomePage({ isDark, toggleDark }) {
             ) : (
               <div className="grid">
                 {displayCards.map((card) => {
-                  const pinned = myPins.some((p) => p.card_id === card.id);
+                  const pinned = activeTab === 'saved' ? true : myPins.some((p) => p.card_id === card.id);
                   return (
                     <FeedCard
                       key={card.id}
