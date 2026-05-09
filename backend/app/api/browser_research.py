@@ -97,6 +97,16 @@ TOPIC_COMMUNITY_MAP: dict[str, list[str]] = {
 GENERIC_COMMUNITY_FALLBACK = ["worldnews", "science", "technology", "askscience", "todayilearned"]
 
 
+def _clean_sub_name(name: str) -> str:
+    """Strip r/ prefix, spaces, and invalid characters from LLM-returned subreddit names."""
+    s = str(name or "").strip()
+    if s.lower().startswith("r/"):
+        s = s[2:]
+    # Subreddit names can only contain letters, numbers, underscores
+    s = "".join(ch for ch in s if ch.isalnum() or ch == "_")
+    return s
+
+
 def _topic_aware_communities(query: str, limit: int = 5) -> list[str]:
     """Pick subreddits based on keyword matching in the query when LLM is unavailable."""
     q = query.lower()
@@ -287,8 +297,7 @@ def _pick_reddit_communities_with_gemini(query: str, limit: int, trace_id: str =
         if isinstance(choices, list):
             normalized = []
             for item in choices:
-                name = str(item).strip()
-                # Accept any non-empty subreddit name the LLM suggests
+                name = _clean_sub_name(str(item))
                 if name and name not in normalized:
                     normalized.append(name)
                 if len(normalized) >= limit:
@@ -566,6 +575,7 @@ async def _fetch_reddit_global_search(
     trace_id: str = None,
 ) -> tuple[list[BlogItem], dict[str, int]]:
     """Search all of Reddit by query — relevant for any topic, no subreddit selection needed."""
+    import aiohttp
     safe_limit = min(max(limit, 1), 25)
     _proxy = settings.REDDIT_PROXY_URL or None
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -1007,6 +1017,8 @@ async def run_live_browser_stream(
                         _merge_usage(usage_totals, _usage_from_response(resp))
                         parsed = _extract_json(_extract_response_text(resp))
                         if isinstance(parsed, dict) and parsed.get("subreddits"):
+                            # Strip r/ prefix and spaces LLM sometimes adds
+                            parsed["subreddits"] = [_clean_sub_name(s) for s in parsed["subreddits"] if _clean_sub_name(s)]
                             plan = parsed
                     except Exception as e:
                         logger.warning(f"[BROWSER] plan LLM failed: {e}")
@@ -1054,7 +1066,7 @@ async def run_live_browser_stream(
                         _merge_usage(usage_totals, _usage_from_response(resp))
                         picked = _extract_json(_extract_response_text(resp))
                         if isinstance(picked, dict) and picked.get("subreddits"):
-                            subreddits = picked["subreddits"][:5]
+                            subreddits = [_clean_sub_name(s) for s in picked["subreddits"] if _clean_sub_name(s)][:5]
                     except Exception as e:
                         logger.warning(f"[BROWSER] pick subs failed: {e}")
 
