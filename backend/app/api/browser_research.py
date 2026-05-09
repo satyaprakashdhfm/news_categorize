@@ -51,6 +51,65 @@ AI_EXPLORE_COMMUNITIES = [
     {"name": "agi", "weekly_visitors": 350_000},
 ]
 
+# Topic-aware Reddit community fallback — used when LLM community picking fails.
+# Keyed by keyword fragments that appear in the search query (lowercase).
+TOPIC_COMMUNITY_MAP: dict[str, list[str]] = {
+    # Technology / AI
+    "ai": ["MachineLearning", "LocalLLaMA", "artificial", "singularity", "ChatGPT"],
+    "machine learning": ["MachineLearning", "learnmachinelearning", "deeplearning", "datascience"],
+    "llm": ["LocalLLaMA", "MachineLearning", "ChatGPT", "singularity"],
+    "robot": ["robotics", "engineering", "technology", "Futurology"],
+    "software": ["programming", "software", "learnprogramming", "technology"],
+    "crypto": ["CryptoCurrency", "Bitcoin", "ethereum", "CryptoMarkets", "defi"],
+    "bitcoin": ["Bitcoin", "CryptoCurrency", "CryptoMarkets"],
+    "blockchain": ["ethereum", "CryptoCurrency", "Bitcoin", "defi"],
+    "space": ["space", "spacex", "nasa", "astrophysics", "Astronomy"],
+    "climate": ["climate", "environment", "sustainability", "renewableenergy", "energy"],
+    "energy": ["energy", "renewableenergy", "solar", "climate", "sustainability"],
+    "health": ["health", "medicine", "nutrition", "medical", "healthcare"],
+    "covid": ["Coronavirus", "medicine", "health", "science"],
+    "drug": ["medicine", "health", "science", "pharmacy"],
+    "cancer": ["cancer", "oncology", "medicine", "science"],
+    "gene": ["genetics", "biology", "science", "Bioinformatics"],
+    "bio": ["biology", "Bioinformatics", "biotech", "science", "genetics"],
+    "economy": ["economics", "economy", "finance", "investing", "worldnews"],
+    "stock": ["investing", "stocks", "wallstreetbets", "finance", "economy"],
+    "finance": ["finance", "investing", "personalfinance", "economics"],
+    "startup": ["startups", "entrepreneur", "business", "investing", "venturecapital"],
+    "politics": ["politics", "PoliticalDiscussion", "worldnews", "news"],
+    "election": ["politics", "PoliticalDiscussion", "news", "worldnews"],
+    "war": ["worldnews", "geopolitics", "news", "politics"],
+    "science": ["science", "askscience", "EverythingScience", "Physics", "chemistry"],
+    "physics": ["Physics", "science", "askscience", "astrophysics"],
+    "quantum": ["quantum", "Physics", "science", "askscience"],
+    "nuclear": ["nuclear", "energy", "science", "Physics"],
+    "aviation": ["aviation", "flying", "aerospace", "airplanes"],
+    "aircraft": ["aviation", "aerospace", "flying", "airplanes", "engineering"],
+    "defense": ["geopolitics", "worldnews", "military", "CredibleDefense"],
+    "military": ["military", "geopolitics", "worldnews", "CredibleDefense"],
+    "gaming": ["gaming", "Games", "pcgaming", "technology"],
+    "game": ["gaming", "Games", "pcgaming", "boardgames"],
+    "food": ["food", "cooking", "nutrition", "EatCheapAndHealthy"],
+    "medicine": ["medicine", "health", "askdocs", "pharmacy"],
+    "law": ["law", "legaladvice", "politics", "news"],
+}
+
+GENERIC_COMMUNITY_FALLBACK = ["worldnews", "science", "technology", "askscience", "todayilearned"]
+
+
+def _topic_aware_communities(query: str, limit: int = 5) -> list[str]:
+    """Pick subreddits based on keyword matching in the query when LLM is unavailable."""
+    q = query.lower()
+    scores: dict[str, int] = {}
+    for keyword, subs in TOPIC_COMMUNITY_MAP.items():
+        if keyword in q:
+            for i, sub in enumerate(subs):
+                scores[sub] = scores.get(sub, 0) + (len(subs) - i)
+    if scores:
+        ranked = sorted(scores, key=lambda s: scores[s], reverse=True)
+        return ranked[:limit]
+    return GENERIC_COMMUNITY_FALLBACK[:limit]
+
 STOPWORDS = {
     "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into", "is", "it",
     "of", "on", "or", "that", "the", "to", "with", "about", "how", "what", "when", "where", "why",
@@ -183,14 +242,14 @@ def _usage_to_schema(model: str | None, usage: dict[str, int], cost_usd: float) 
 def _pick_reddit_communities_with_gemini(query: str, limit: int, trace_id: str = None) -> tuple[list[str], dict[str, int]]:
     client = _get_genai_client()
     if client is None:
-        return [x["name"] for x in sorted(AI_EXPLORE_COMMUNITIES, key=lambda c: c["weekly_visitors"], reverse=True)[:limit]], _empty_usage()
+        return _topic_aware_communities(query, limit), _empty_usage()
 
     prompt = (
-        "Select best Reddit communities for this query from the provided list. "
-        "Return JSON only: {\"communities\": [..]}. "
-        "Focus on high-signal communities for startup funding and open-source AI model discussion.\n\n"
+        "Select the best Reddit communities for researching this specific query. "
+        "Return JSON only: {\"communities\": [\"sub1\", \"sub2\", ...]}. "
+        "Pick communities that are directly relevant to the query topic — not generic ones. "
+        "You may suggest any real subreddit, not just from the candidate list.\n\n"
         f"Query: {query}\n"
-        f"Candidates: {json.dumps(AI_EXPLORE_COMMUNITIES, ensure_ascii=True)}\n"
         f"Max communities: {limit}"
     )
 
@@ -227,11 +286,11 @@ def _pick_reddit_communities_with_gemini(query: str, limit: int, trace_id: str =
         choices = payload.get("communities") if isinstance(payload, dict) else None
         if isinstance(choices, list):
             normalized = []
-            valid = {c["name"].lower(): c["name"] for c in AI_EXPLORE_COMMUNITIES}
             for item in choices:
-                key = str(item).strip().lower()
-                if key in valid and valid[key] not in normalized:
-                    normalized.append(valid[key])
+                name = str(item).strip()
+                # Accept any non-empty subreddit name the LLM suggests
+                if name and name not in normalized:
+                    normalized.append(name)
                 if len(normalized) >= limit:
                     break
             if normalized:
@@ -239,7 +298,7 @@ def _pick_reddit_communities_with_gemini(query: str, limit: int, trace_id: str =
     except Exception as exc:
         logger.warning(f"[BROWSER-RESEARCH] Gemini community pick failed: {exc}")
 
-    return [x["name"] for x in sorted(AI_EXPLORE_COMMUNITIES, key=lambda c: c["weekly_visitors"], reverse=True)[:limit]], _empty_usage()
+    return _topic_aware_communities(query, limit), _empty_usage()
 
 
 def _summarize_text(title: str, body: str, client, trace_id: str = None) -> tuple[str, dict[str, int]]:
@@ -929,7 +988,7 @@ async def run_live_browser_stream(
 
                 # ── CALL 1: LLM plans full strategy + picks subreddits ────
                 yield emit("step", "LLM planning research strategy...")
-                FALLBACK_SUBS = ["science", "technology", "worldnews", "askscience", "todayilearned"]
+                FALLBACK_SUBS = _topic_aware_communities(query, 5)
                 plan: dict = {"subreddits": FALLBACK_SUBS, "youtube_query": query, "news_query": query}
                 if client:
                     plan_prompt = (
@@ -1019,6 +1078,16 @@ async def run_live_browser_stream(
 
                 yield emit("step", f"Reddit done: {len(reddit_blogs)} posts from {len(subreddits)} subreddits")
 
+                # ── PHASE 1b: Reddit global search (topic-agnostic backup) ──
+                yield emit("step", f"Reddit global search for '{query[:60]}' (past week)...")
+                global_posts, global_usage = await _fetch_reddit_global_search(query, limit=10, client=_sum_client)
+                _merge_usage(usage_totals, global_usage)
+                # Deduplicate by URL before merging
+                existing_urls = {p.url for p in reddit_blogs}
+                new_global = [p for p in global_posts if p.url not in existing_urls]
+                reddit_blogs.extend(new_global)
+                yield emit("step", f"  → {len(new_global)} additional posts from global search (total: {len(reddit_blogs)})")
+
                 # Switch to a clean context (no proxy) for YouTube + News
                 await _reddit_ctx.close()
                 _clean_ctx = await browser.new_context(**_ctx_kwargs)
@@ -1035,6 +1104,15 @@ async def run_live_browser_stream(
 
                 videos_raw = await page.evaluate("""
                     () => {
+                        const RECENT_PATTERNS = [
+                            /\\d+ (second|minute|hour|day|week)s? ago/i,
+                            /\\d+ (month)s? ago/i,
+                            /streamed \\d+/i,
+                        ];
+                        const OLD_PATTERNS = [
+                            /\\d+ years? ago/i,
+                            /[2-9] months? ago/i,
+                        ];
                         const items = [];
                         document.querySelectorAll('ytd-video-renderer').forEach(el => {
                             const titleEl = el.querySelector('a#video-title');
@@ -1043,16 +1121,22 @@ async def run_live_browser_stream(
                             if (titleEl) {
                                 const href = titleEl.getAttribute('href') || '';
                                 const title = (titleEl.getAttribute('title') || titleEl.textContent || '').trim();
+                                const metaText = [...spans].map(s=>s.textContent.trim()).join(' | ');
+                                // Skip clearly old videos (2+ months or years)
+                                if (OLD_PATTERNS.some(p => p.test(metaText))) return;
                                 if (title) items.push({
                                     title,
                                     url: href.startsWith('http') ? href : 'https://www.youtube.com' + href,
                                     channel: channelEl?.textContent.trim() || '',
                                     description: el.querySelector('#description-text')?.textContent.trim() || '',
-                                    meta: [...spans].map(s=>s.textContent.trim()).join(' | '),
+                                    meta: metaText,
+                                    isRecent: RECENT_PATTERNS.some(p => p.test(metaText)),
                                 });
                             }
                         });
-                        return items.filter(v => v.title && v.url.includes('watch')).slice(0, 10);
+                        // Sort: recent-flagged first, then all others
+                        items.sort((a, b) => (b.isRecent ? 1 : 0) - (a.isRecent ? 1 : 0));
+                        return items.filter(v => v.title && v.url.includes('watch')).slice(0, 12);
                     }
                 """)
                 yield emit("step", f"  → {len(videos_raw)} YouTube videos found")
