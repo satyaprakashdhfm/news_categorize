@@ -72,8 +72,23 @@ _SUBDOMAIN_DESCRIPTIONS = {
 }
 
 
-def _ai_classify_domain(query: str) -> tuple[str | None, str | None]:
-    """Use LLM to classify a free-form research query into a domain+subdomain."""
+def _keyword_classify_domain(query: str) -> tuple[str, str]:
+    """Keyword-based fallback classifier — always returns a domain+subdomain."""
+    q = query.lower()
+    scores: dict[str, int] = {}
+    for sub, desc in _SUBDOMAIN_DESCRIPTIONS.items():
+        scores[sub] = sum(1 for kw in desc.replace(",", "").split() if len(kw) > 3 and kw in q)
+    best_sub = max(scores, key=lambda s: scores[s])
+    # find parent domain
+    for domain, subs in _DOMAIN_MAP.items():
+        if best_sub in subs:
+            return domain, best_sub if scores[best_sub] > 0 else None
+    return "OTH", None
+
+
+def _ai_classify_domain(query: str) -> tuple[str, str]:
+    """Use LLM to classify a free-form research query into a domain+subdomain.
+    Falls back to keyword matching if LLM is unavailable."""
     try:
         from app.core.ollama_client import get_llm_client, get_active_model
         client = get_llm_client()
@@ -96,10 +111,14 @@ def _ai_classify_domain(query: str) -> tuple[str | None, str | None]:
             subdomain = data.get("subdomain")
             if domain in _DOMAIN_MAP:
                 valid_sub = subdomain if subdomain in _DOMAIN_MAP.get(domain, []) else None
+                logger.info(f"[AI_CLASSIFY] '{query[:60]}' → {domain}·{valid_sub}")
                 return domain, valid_sub
     except Exception as exc:
-        logger.warning(f"[AI_CLASSIFY] LLM call failed: {exc}")
-    return None, None
+        logger.warning(f"[AI_CLASSIFY] LLM call failed, using keyword fallback: {exc}")
+    # Always fall back to keyword matching — never return None
+    domain, subdomain = _keyword_classify_domain(query)
+    logger.info(f"[KEYWORD_CLASSIFY] '{query[:60]}' → {domain}·{subdomain}")
+    return domain, subdomain
 from app.schemas.feed_card import (
     AttachRunRequest,
     AttachRunResponse,
