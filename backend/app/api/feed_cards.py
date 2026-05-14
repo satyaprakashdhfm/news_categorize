@@ -140,10 +140,12 @@ def get_global_cards(
     domain: Optional[str] = Query(None),
     subdomain: Optional[str] = Query(None),
     card_type: Optional[str] = Query(None),
+    hours_back: Optional[int] = Query(None, ge=1, le=8760),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
+    from datetime import datetime, timedelta
     q = db.query(FeedCard).filter(FeedCard.is_global == True)
     if domain:
         q = q.filter(FeedCard.domain == domain.upper())
@@ -151,6 +153,9 @@ def get_global_cards(
         q = q.filter(FeedCard.subdomain == subdomain.upper())
     if card_type:
         q = q.filter(FeedCard.type == card_type)
+    if hours_back:
+        since = datetime.now() - timedelta(hours=hours_back)
+        q = q.filter(FeedCard.updated_at >= since)
 
     # Build the smart feed: only populated domain cards + custom cards not shadowed by a domain card
     # Find domain+subdomain pairs that already have a populated domain card
@@ -379,15 +384,20 @@ def unpin_card(
 @router.get("/my/cards", response_model=FeedCardListResponse)
 def get_my_created_cards(
     domain: Optional[str] = Query(None),
+    hours_back: Optional[int] = Query(None, ge=1, le=8760),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Get cards created by the current user (their own research)."""
+    from datetime import datetime, timedelta
     q = db.query(FeedCard).filter(FeedCard.created_by == current_user.id)
     if domain:
         q = q.filter(FeedCard.domain == domain.upper())
+    if hours_back:
+        since = datetime.now() - timedelta(hours=hours_back)
+        q = q.filter(FeedCard.updated_at >= since)
     total = q.count()
     cards = q.order_by(FeedCard.updated_at.desc()).offset(offset).limit(limit).all()
     return FeedCardListResponse(cards=cards, total=total)

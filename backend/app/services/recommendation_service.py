@@ -6,145 +6,15 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.models.user import User
 from app.models.recommendation import UserRecommendation
+from app.services.interests_config import (
+    ALL_SUBDOMAINS,
+    VALID_DOMAIN_CODES,
+    VALID_SUBDOMAIN_CODES,
+    DOMAIN_TO_SUBDOMAINS,
+    resolve_to_subdomains,
+)
 
 logger = logging.getLogger(__name__)
-
-DOMAIN_NAMES = {
-    "POL": "Policy & Governance",
-    "ECO": "Economy",
-    "BUS": "Business",
-    "TEC": "Science & Technology",
-    "OTH": "Others",
-}
-
-# ── Subdomain-level search config ────────────────────────────────────────────
-
-SUBDOMAIN_CONFIG = {
-    # Science & Technology
-    "SAI": {
-        "domain": "TEC", "label": "Software & AI",
-        "queries": ["artificial intelligence AI LLM breakthroughs news today", "software engineering open source tech news"],
-        "subreddits": ["artificial", "MachineLearning", "programming"],
-        "youtube": ["@TwoMinutePapers"],
-    },
-    "PHY": {
-        "domain": "TEC", "label": "Science – Physics",
-        "queries": ["physics research quantum computing fusion energy breakthroughs", "particle physics dark matter discovery news"],
-        "subreddits": ["Physics", "QuantumComputing"],
-        "youtube": ["@veaborea"],
-    },
-    "BIO": {
-        "domain": "TEC", "label": "Biotechnology",
-        "queries": ["biotech gene editing CRISPR drug approval clinical trials news", "pandemic preparedness health research"],
-        "subreddits": ["biotech", "science"],
-        "youtube": [],
-    },
-    "ROB": {
-        "domain": "TEC", "label": "Robotics",
-        "queries": ["robotics humanoid autonomous systems industrial automation news", "AI robotics embodied intelligence"],
-        "subreddits": ["robotics", "Automate"],
-        "youtube": [],
-    },
-    "DEF": {
-        "domain": "TEC", "label": "Defence & Weapon Technologies",
-        "queries": ["defense technology military drones hypersonic weapons cyber warfare", "arms procurement defense innovation news"],
-        "subreddits": ["DefenseNews", "LessCredibleDefence"],
-        "youtube": [],
-    },
-    "SPC": {
-        "domain": "TEC", "label": "Space",
-        "queries": ["space launch satellite SpaceX NASA moon Mars mission news", "commercial space rocket constellation today"],
-        "subreddits": ["space", "SpaceXLounge"],
-        "youtube": ["@EverydayAstronaut"],
-    },
-    "NMI": {
-        "domain": "TEC", "label": "Nano & Material Innovation",
-        "queries": ["nanotechnology advanced materials graphene metamaterials research", "material science manufacturing breakthroughs"],
-        "subreddits": ["Nanotechnology"],
-        "youtube": [],
-    },
-    "EHW": {
-        "domain": "TEC", "label": "Electronics & Hardware",
-        "queries": ["semiconductor chip TSMC GPU AI hardware innovation news", "consumer electronics devices supply chain"],
-        "subreddits": ["hardware", "chipdesign"],
-        "youtube": [],
-    },
-    # Economy
-    "MAC": {
-        "domain": "ECO", "label": "Macroeconomics",
-        "queries": ["global GDP growth inflation recession economic outlook news", "IMF World Bank fiscal policy macroeconomics"],
-        "subreddits": ["economics"],
-        "youtube": [],
-    },
-    "MIC": {
-        "domain": "ECO", "label": "Microeconomics",
-        "queries": ["consumer trends corporate competition pricing market structure", "business economics supply demand news"],
-        "subreddits": ["economics"],
-        "youtube": [],
-    },
-    "INV": {
-        "domain": "ECO", "label": "Investments",
-        "queries": ["stock market IPO venture capital private equity investment news", "emerging markets capital flows today"],
-        "subreddits": ["stocks", "investing"],
-        "youtube": [],
-    },
-    "MON": {
-        "domain": "ECO", "label": "Monetary Policy",
-        "queries": ["central bank interest rate decision monetary policy inflation", "Federal Reserve ECB rate cut hike news"],
-        "subreddits": ["finance", "economics"],
-        "youtube": [],
-    },
-    "TRD": {
-        "domain": "ECO", "label": "Trade & Global Economy",
-        "queries": ["global trade tariffs supply chain WTO bilateral deals news", "export import reshoring trade war"],
-        "subreddits": ["GlobalTrade", "economics"],
-        "youtube": [],
-    },
-    # Policy & Governance
-    "EXE": {
-        "domain": "POL", "label": "Executive",
-        "queries": ["heads of state executive decisions government policy leadership", "president prime minister cabinet news today"],
-        "subreddits": ["worldnews", "politics"],
-        "youtube": [],
-    },
-    "LEG": {
-        "domain": "POL", "label": "Legislative",
-        "queries": ["parliament legislation bills policy reforms legislative debates", "congress senate law passing news"],
-        "subreddits": ["politics", "law"],
-        "youtube": [],
-    },
-    "JUD": {
-        "domain": "POL", "label": "Judiciary",
-        "queries": ["court rulings landmark legal judgments constitutional law", "supreme court international justice human rights"],
-        "subreddits": ["law", "SupremeCourt"],
-        "youtube": [],
-    },
-    "GEO": {
-        "domain": "POL", "label": "Geopolitics",
-        "queries": ["geopolitical flashpoints global power shifts alliances diplomacy", "international crisis world order rivalries news"],
-        "subreddits": ["geopolitics", "worldnews"],
-        "youtube": ["@WION"],
-    },
-    # Business
-    "SCA": {
-        "domain": "BUS", "label": "Startups & Corporate Activity",
-        "queries": ["startup funding unicorn IPO mergers acquisitions corporate deals", "venture capital cross-border business news"],
-        "subreddits": ["startups", "business"],
-        "youtube": [],
-    },
-    "MID": {
-        "domain": "BUS", "label": "Markets & Industry Dynamics",
-        "queries": ["industry disruption market consolidation sector dynamics news", "competitive landscape incumbent challengers business"],
-        "subreddits": ["business", "entrepreneur"],
-        "youtube": [],
-    },
-}
-
-# Map domain → its subdomains
-DOMAIN_SUBDOMAINS = {}
-for sub_code, sub_cfg in SUBDOMAIN_CONFIG.items():
-    dom = sub_cfg["domain"]
-    DOMAIN_SUBDOMAINS.setdefault(dom, []).append(sub_code)
 
 
 def _get_batch_label() -> str:
@@ -154,8 +24,7 @@ def _get_batch_label() -> str:
         return "morning"
     elif hour < 16:
         return "afternoon"
-    else:
-        return "evening"
+    return "evening"
 
 
 async def _search_google_news(query: str) -> list[dict]:
@@ -186,10 +55,7 @@ async def _search_reddit(subreddits: list[str]) -> list[dict]:
     try:
         from app.services.reddit_scraping_service import reddit_scraping_service
         community_results = await reddit_scraping_service.scrape_communities(
-            communities=subreddits[:2],
-            mode="hot",
-            posts_per_community=2,
-            summarize=False,
+            communities=subreddits[:2], mode="hot", posts_per_community=2, summarize=False,
         )
         results = []
         for community in community_results:
@@ -214,12 +80,10 @@ async def _search_youtube(channels: list[str]) -> list[dict]:
     try:
         from app.services.youtube_scraping_service import youtube_scraping_service
         channel_results = await youtube_scraping_service.scrape_channels(
-            channels=channels[:1],
-            videos_per_channel=2,
-            summarize=False,
+            channels=channels[:1], videos_per_channel=2, summarize=False,
         )
         results = []
-        for channel in channel_results:
+        for channel in (channel_results if isinstance(channel_results, list) else []):
             for video in channel.get("videos", []):
                 if video.get("title"):
                     results.append({
@@ -235,45 +99,93 @@ async def _search_youtube(channels: list[str]) -> list[dict]:
         return []
 
 
+async def _search_hackernews(keywords: list[str]) -> list[dict]:
+    if not keywords:
+        return []
+    try:
+        from app.services.hackernews_service import hackernews_service
+        stories = await hackernews_service.fetch_best(limit=40)
+        matched = await hackernews_service.search_by_keywords(keywords[:3], stories)
+        return [
+            {
+                "title": s["title"],
+                "summary": f"Hacker News — {s.get('score', 0)} points · {s.get('comments', 0)} comments",
+                "source_url": s.get("hn_url") or s.get("url", ""),
+                "source_type": "hackernews",
+                "score": s.get("score"),
+            }
+            for s in matched[:3]
+        ]
+    except Exception as exc:
+        logger.warning(f"[RECS] HN failed: {exc}")
+        return []
+
+
+async def _fetch_rss(sub_code: str, domain_code: str) -> list[dict]:
+    try:
+        from app.services.rss_service import rss_service
+        items = await rss_service.fetch_for_subdomain(sub_code, limit_per_feed=3)
+        return [
+            {
+                "title": item["title"],
+                "summary": item.get("summary", ""),
+                "source_url": item["url"],
+                "source_type": "rss",
+                "score": None,
+            }
+            for item in items if item.get("title")
+        ]
+    except Exception as exc:
+        logger.warning(f"[RECS] RSS failed for {sub_code}: {exc}")
+        return []
+
+
 async def _search_for_subdomain(sub_code: str) -> list[dict]:
-    """Search Google News + Reddit + YouTube for a specific subdomain."""
-    cfg = SUBDOMAIN_CONFIG.get(sub_code)
+    """
+    Search Google News + Reddit + YouTube + HN + RSS for a specific subdomain.
+    Uses interests_config as the single source of truth.
+    """
+    cfg = ALL_SUBDOMAINS.get(sub_code)
     if not cfg:
         return []
 
     queries = cfg.get("queries", [])
     subreddits = cfg.get("subreddits", [])
     youtube_channels = cfg.get("youtube", [])
+    hn_keywords = cfg.get("hn_queries", [])
+    domain_code = cfg.get("domain", "OTH")
 
     tasks = []
-    # Google News — use first query
     if queries:
         tasks.append(_search_google_news(queries[0]))
-    # Reddit
     tasks.append(_search_reddit(subreddits))
-    # YouTube
-    tasks.append(_search_youtube(youtube_channels))
+    if youtube_channels:
+        tasks.append(_search_youtube(youtube_channels))
+    if hn_keywords:
+        tasks.append(_search_hackernews(hn_keywords))
+    tasks.append(_fetch_rss(sub_code, domain_code))
 
     results_batches = await asyncio.gather(*tasks, return_exceptions=True)
 
-    all_results = []
+    seen: set[str] = set()
+    unique: list[dict] = []
     for batch in results_batches:
-        if isinstance(batch, list):
-            all_results.extend(batch)
-
-    # Deduplicate by URL
-    seen = set()
-    unique = []
-    for item in all_results:
-        url = item.get("source_url", "")
-        if url and url not in seen:
-            seen.add(url)
-            unique.append(item)
+        if not isinstance(batch, list):
+            continue
+        for item in batch:
+            url = item.get("source_url", "")
+            if url and url not in seen:
+                seen.add(url)
+                unique.append(item)
     return unique
 
 
-def generate_recommendations():
-    """Generate personalized recommendations by searching at subdomain level."""
+def generate_recommendations() -> int:
+    """
+    Generate personalized recommendations for all users with interests.
+    Supports both domain-level and subdomain-level interest codes.
+    Uses interests_config as the canonical source.
+    """
     db: Session = SessionLocal()
     batch_label = _get_batch_label()
     try:
@@ -284,35 +196,33 @@ def generate_recommendations():
             return 0
 
         # Collect all unique subdomains needed across all users
-        needed_subdomains = set()
+        needed_subdomains: set[str] = set()
         for user in users_with_interests:
-            for domain in (user.interests or []):
-                for sub in DOMAIN_SUBDOMAINS.get(domain, []):
-                    needed_subdomains.add(sub)
+            resolved = resolve_to_subdomains(user.interests or [])
+            needed_subdomains.update(resolved)
 
         logger.info(f"[RECS] Searching {len(needed_subdomains)} subdomains for {len(users_with_interests)} users")
 
-        # Search once per subdomain (shared across users with same interests)
+        # Search once per subdomain, shared across users
         loop = asyncio.new_event_loop()
-        subdomain_results = {}
+        subdomain_results: dict[str, list[dict]] = {}
         try:
             for sub_code in needed_subdomains:
-                cfg = SUBDOMAIN_CONFIG.get(sub_code, {})
                 results = loop.run_until_complete(_search_for_subdomain(sub_code))
+                cfg = ALL_SUBDOMAINS.get(sub_code, {})
                 subdomain_results[sub_code] = results
                 logger.info(f"[RECS] {sub_code} ({cfg.get('label', sub_code)}): {len(results)} items")
         finally:
             loop.close()
 
-        # 24h cutoff for duplicate checking
         cutoff = datetime.utcnow() - timedelta(hours=24)
-
         total_created = 0
-        for user in users_with_interests:
-            interests = user.interests or []
 
-            # Get URLs already recommended to this user in last 24h
-            recent_urls = {
+        for user in users_with_interests:
+            resolved_subs = resolve_to_subdomains(user.interests or [])
+
+            # URLs already sent to this user in the last 24h
+            recent_urls: set[str] = {
                 r.source_url
                 for r in db.query(UserRecommendation.source_url)
                 .filter(
@@ -324,50 +234,56 @@ def generate_recommendations():
                 if r.source_url
             }
 
-            new_recs = []
-            for domain in interests:
-                subdomains = DOMAIN_SUBDOMAINS.get(domain, [])
-                for sub_code in subdomains:
-                    cfg = SUBDOMAIN_CONFIG.get(sub_code, {})
-                    items = subdomain_results.get(sub_code, [])
-                    count = 0
-                    for item in items:
-                        if count >= 3:  # max 3 per subdomain per user
-                            break
-                        url = item.get("source_url", "")
-                        if url in recent_urls:
-                            continue
+            new_recs: list[UserRecommendation] = []
+            for sub_code in resolved_subs:
+                cfg = ALL_SUBDOMAINS.get(sub_code, {})
+                domain_code = cfg.get("domain", "OTH")
+                items = subdomain_results.get(sub_code, [])
+                count = 0
 
-                        source_label = {
-                            "google_news": "Google News",
-                            "reddit": "Reddit",
-                            "youtube": "YouTube",
-                        }.get(item.get("source_type", ""), "Web")
+                for item in items:
+                    if count >= 3:  # max 3 per subdomain per user per batch
+                        break
+                    url = item.get("source_url", "")
+                    if url in recent_urls:
+                        continue
 
-                        rec = UserRecommendation(
-                            id=str(uuid.uuid4()),
-                            user_id=user.id,
-                            domain=domain,
-                            subdomain=sub_code,
-                            reason=f"{cfg.get('label', sub_code)} — via {source_label}",
-                            batch_label=batch_label,
-                            title=item.get("title", "")[:512],
-                            summary=(item.get("summary") or "")[:4000],
-                            source_url=url[:1024] if url else None,
-                            source_type=item.get("source_type"),
-                            score=item.get("score"),
-                        )
-                        new_recs.append(rec)
-                        recent_urls.add(url)
-                        count += 1
+                    source_label = {
+                        "google_news": "Google News",
+                        "reddit": "Reddit",
+                        "youtube": "YouTube",
+                        "hackernews": "Hacker News",
+                        "rss": "RSS",
+                    }.get(item.get("source_type", ""), "Web")
+
+                    rec = UserRecommendation(
+                        id=str(uuid.uuid4()),
+                        user_id=user.id,
+                        domain=domain_code,
+                        subdomain=sub_code,
+                        reason=f"{cfg.get('label', sub_code)} — via {source_label}",
+                        batch_label=batch_label,
+                        title=(item.get("title") or "")[:512],
+                        summary=(item.get("summary") or "")[:4000],
+                        source_url=url[:1024] if url else None,
+                        source_type=item.get("source_type"),
+                        score=int(item["score"]) if item.get("score") is not None else None,
+                    )
+                    new_recs.append(rec)
+                    recent_urls.add(url)
+                    count += 1
 
             if new_recs:
                 db.add_all(new_recs)
                 total_created += len(new_recs)
 
         db.commit()
-        logger.info(f"[RECS] Generated {total_created} recommendations for {len(users_with_interests)} users (batch={batch_label})")
+        logger.info(
+            f"[RECS] Generated {total_created} recommendations "
+            f"for {len(users_with_interests)} users (batch={batch_label})"
+        )
         return total_created
+
     except Exception as exc:
         logger.error(f"[RECS] Error: {exc}", exc_info=True)
         db.rollback()

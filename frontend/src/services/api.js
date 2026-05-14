@@ -81,3 +81,17 @@ export const browserResearchApi = {
   getHistory: (params = {}) => api.get('/browser-research/history', { params }).then((r) => r.data),
   getRun: (runId) => api.get(`/browser-research/history/${runId}`).then((r) => r.data),
 };
+
+// ── Hacker News ───────────────────────────────────────────────────────────────
+export const hackerNewsApi = {
+  getTop: (limit = 30) => api.get('/hackernews/top', { params: { limit } }).then((r) => r.data),
+  getBest: (limit = 30) => api.get('/hackernews/best', { params: { limit } }).then((r) => r.data),
+  getNew: (limit = 30) => api.get('/hackernews/new', { params: { limit } }).then((r) => r.data),
+};
+
+// ── RSS Feeds ─────────────────────────────────────────────────────────────────
+export const rssApi = {
+  getForDomain: (domainCode, limitPerFeed = 6) =>
+    api.get(`/rss/domain/${domainCode}`, { params: { limit_per_feed: limitPerFeed } }).then((r) => r.data),
+  listFeeds: () => api.get('/rss/feeds').then((r) => r.data),
+};
