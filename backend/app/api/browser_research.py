@@ -470,6 +470,64 @@ def _score_blog_relevance(query: str, blog: BlogItem, client, trace_id: str = No
         return round(min(0.89, lexical_score), 4), _empty_usage()
 
 
+async def _batch_title_filter(
+    items: list[BlogItem],
+    query: str,
+) -> tuple[list[BlogItem], str]:
+    """One LLM call — sends only titles, gets back which ones are relevant.
+    Falls back to keeping all items if the model output can't be parsed."""
+    import re as _re
+    if not items:
+        return items, "0 items"
+
+    from app.core.ollama_client import get_llm_client, get_active_model
+    try:
+        _client = get_llm_client()
+        _model = get_active_model()
+    except Exception:
+        return items, "skipped (no client)"
+
+    # Only titles, truncated to keep the prompt short
+    lines = [f"{i+1}. [{it.source}] {it.title[:120]}" for i, it in enumerate(items)]
+    numbered = "\n".join(lines)
+
+    prompt = (
+        f'Topic: "{query}"\n\n'
+        f'Below is a numbered list of news/post titles. '
+        f'Reply with ONLY a JSON object listing the numbers that are relevant to the topic.\n'
+        f'Format: {{"keep": [1, 2, 5]}}\n\n'
+        f'{numbered}'
+    )
+
+    try:
+        resp = await asyncio.to_thread(
+            _client.models.generate_content,
+            model=_model,
+            contents=prompt,
+        )
+        text = _extract_response_text(resp)
+        payload = _extract_json(text)
+        keep_nums: set[int] = set()
+
+        if isinstance(payload, dict) and isinstance(payload.get("keep"), list):
+            keep_nums = {int(n) for n in payload["keep"] if str(n).lstrip('-').isdigit()}
+        else:
+            # Fallback: extract any standalone numbers from the response
+            keep_nums = {int(n) for n in _re.findall(r'\b(\d+)\b', text)
+                         if 1 <= int(n) <= len(items)}
+
+        if keep_nums:
+            kept = [it for i, it in enumerate(items) if (i + 1) in keep_nums]
+            # Sanity: if LLM drops >80% it probably misfired — keep all
+            if len(kept) >= max(3, len(items) * 0.2):
+                dropped = len(items) - len(kept)
+                return kept, f"AI kept {len(kept)}/{len(items)}, dropped {dropped} off-topic"
+    except Exception as _e:
+        logger.warning(f"[BROWSER] batch title filter failed: {_e}")
+
+    return items, f"AI filter skipped, kept all {len(items)}"
+
+
 async def _filter_by_relevance(
     blogs: list[BlogItem],
     query: str,
@@ -1251,13 +1309,15 @@ async def run_live_browser_stream(
                 yield emit("step", f"Closing browser... (reddit={len(reddit_blogs)}, yt={len(youtube_blogs)}, news={len(news_blogs)})")
                 await browser.close()
 
-                # ── Combine + relevance filter ─────────────────────────────
+                # ── Combine ────────────────────────────────────────────────
                 all_blogs: list[BlogItem] = reddit_blogs + youtube_blogs + news_blogs
-                yield emit("step", f"Total collected: {len(all_blogs)} items. Saving to database...")
-                blogs, rel_usage = await _filter_by_relevance(
-                    blogs=all_blogs, query=query, threshold=0.0, client=client
-                )
-                _merge_usage(usage_totals, rel_usage)
+                yield emit("step", f"Total collected: {len(all_blogs)} items. Running AI relevance check...")
+
+                # ── AI title filter (1 LLM call, titles only) ──────────────
+                all_blogs, filter_msg = await _batch_title_filter(all_blogs, query)
+                yield emit("step", f"  → {filter_msg}")
+
+                blogs = all_blogs
 
                 # ── Save ───────────────────────────────────────────────────
                 yield emit("step", f"Saving {len(blogs)} results to database...")
