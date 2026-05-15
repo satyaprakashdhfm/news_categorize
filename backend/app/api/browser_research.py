@@ -1306,68 +1306,92 @@ async def run_live_browser_stream(
 
                 yield emit("step", f"  → {len(news_blogs)} total news articles (Bing + Google)")
 
-                # ── PHASE 3c: Twitter/X via Nitter RSS ────────────────────
+                # ── PHASE 3c: Twitter/X — Nitter HTML (Playwright) → Twitter direct fallback ──
                 twitter_blogs: list[BlogItem] = []
                 try:
-                    import aiohttp as _aiohttp_tw
-                    import xml.etree.ElementTree as _ET_tw
-                    import email.utils as _eutils_tw
-                    from datetime import timezone as _tz_tw, timedelta as _td_tw
-                    _two_days_ago_tw = datetime.now(_tz_tw.utc) - _td_tw(days=2)
-                    # Try multiple Nitter instances in order until one responds
-                    _nitter_instances = [
-                        "https://nitter.privacydev.net",
-                        "https://nitter.poast.org",
-                        "https://nitter.1d4.us",
-                        "https://nitter.kavin.rocks",
+                    _tw_query_enc = quote_plus(news_query)
+                    yield emit("step", f"Twitter/X search: '{news_query}'")
+                    tw_raw = []
+
+                    # --- Attempt 1: Nitter HTML instances via Playwright ---
+                    _nitter_search_urls = [
+                        f"https://nitter.privacydev.net/search?q={_tw_query_enc}&f=tweets",
+                        f"https://nitter.poast.org/search?q={_tw_query_enc}&f=tweets",
+                        f"https://nitter.1d4.us/search?q={_tw_query_enc}&f=tweets",
+                        f"https://nitter.net/search?q={_tw_query_enc}&f=tweets",
+                        f"https://nitter.tiekoetter.com/search?q={_tw_query_enc}&f=tweets",
                     ]
-                    _tw_query = quote_plus(news_query)
-                    yield emit("step", f"Twitter/X via Nitter RSS: '{news_query}'")
-                    _tw_rss = None
-                    async with _aiohttp_tw.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as _twsess:
-                        for _inst in _nitter_instances:
-                            try:
-                                _tw_url = f"{_inst}/search/rss?q={_tw_query}&f=tweets"
-                                async with _twsess.get(_tw_url, timeout=_aiohttp_tw.ClientTimeout(total=10)) as _twresp:
-                                    if _twresp.status == 200:
-                                        _tw_rss = await _twresp.text()
-                                        yield emit("step", f"  → connected to {_inst}")
-                                        break
-                            except Exception:
-                                continue
-                    if _tw_rss:
-                        _tw_root = _ET_tw.fromstring(_tw_rss)
-                        tw_raw = []
-                        for _twitem in _tw_root.findall(".//item")[:20]:
-                            _tw_title = (_twitem.findtext("title") or "").strip()
-                            _tw_link = (_twitem.findtext("link") or "").strip()
-                            _tw_desc = (_twitem.findtext("description") or "")[:300].strip()
-                            _tw_pub = (_twitem.findtext("pubDate") or "").strip()
-                            if not _tw_title or not _tw_link:
-                                continue
-                            # Date filter: skip if older than 2 days
-                            try:
-                                _tw_dt = _eutils_tw.parsedate_to_datetime(_tw_pub).astimezone(_tz_tw.utc)
-                                if _tw_dt < _two_days_ago_tw:
-                                    continue
-                            except Exception:
-                                pass
-                            # Strip HTML tags from description
-                            import re as _re_tw
-                            _tw_desc_clean = _re_tw.sub(r"<[^>]+>", "", _tw_desc)[:300].strip()
-                            tw_raw.append({"title": _tw_title, "url": _tw_link, "snippet": _tw_desc_clean})
-                        yield emit("step", f"  → {len(tw_raw)} tweets found (past 2d)")
-                        if tw_raw:
-                            async def _sum_tweet(a: dict) -> BlogItem:
-                                async with sem:
-                                    summary, u = await asyncio.to_thread(_summarize_text, a["title"], a.get("snippet", ""), _sum_client)
-                                    _merge_usage(usage_totals, u)
-                                    return BlogItem(source="twitter", title=a["title"], summary=summary, url=a["url"])
-                            twitter_blogs = list(await asyncio.gather(*[_sum_tweet(a) for a in tw_raw]))
+                    for _nurl in _nitter_search_urls:
+                        try:
+                            for ev in await nav(_nurl, t=12000):
+                                yield ev
+                            tw_raw = await page.evaluate("""
+                                () => {
+                                    const items = [];
+                                    document.querySelectorAll('.timeline-item').forEach(el => {
+                                        const text = (el.querySelector('.tweet-content')?.innerText || '').trim();
+                                        const href = el.querySelector('.tweet-link')?.getAttribute('href') || '';
+                                        const user = (el.querySelector('.username')?.innerText || '').trim();
+                                        if (text.length < 10 || !href) return;
+                                        const url = href.startsWith('http') ? href : 'https://twitter.com' + href;
+                                        items.push({ title: text.slice(0, 200), url, author: user });
+                                    });
+                                    return items.slice(0, 20);
+                                }
+                            """)
+                            if tw_raw:
+                                yield emit("step", f"  → {len(tw_raw)} tweets via Nitter ({_nurl.split('/')[2]})")
+                                break
+                            else:
+                                yield emit("step", f"  → {_nurl.split('/')[2]} — no results, trying next...")
+                        except Exception as _ni_err:
+                            yield emit("step", f"  → {_nurl.split('/')[2]} failed, trying next...")
+                            continue
+
+                    # --- Attempt 2: Twitter/X directly via Playwright ---
+                    if not tw_raw:
+                        yield emit("step", "  → trying Twitter/X directly...")
+                        try:
+                            _tw_direct = f"https://x.com/search?q={_tw_query_enc}&f=live&src=typed_query"
+                            for ev in await nav(_tw_direct, t=25000):
+                                yield ev
+                            await asyncio.sleep(4)
+                            tw_raw = await page.evaluate("""
+                                () => {
+                                    const items = [];
+                                    document.querySelectorAll('[data-testid="tweet"]').forEach(el => {
+                                        const text = (el.querySelector('[data-testid="tweetText"]')?.innerText || '').trim();
+                                        const link = el.querySelector('a[href*="/status/"]');
+                                        const user = (el.querySelector('[data-testid="User-Name"]')?.innerText || '').trim();
+                                        if (text.length < 10) return;
+                                        items.push({
+                                            title: text.slice(0, 200),
+                                            url: link?.href || 'https://x.com',
+                                            author: user,
+                                        });
+                                    });
+                                    return items.slice(0, 20);
+                                }
+                            """)
+                            if tw_raw:
+                                yield emit("step", f"  → {len(tw_raw)} tweets from Twitter/X directly")
+                            else:
+                                yield emit("step", "  → Twitter/X requires login or returned nothing")
+                        except Exception as _tw_direct_err:
+                            yield emit("step", f"  → Twitter direct failed ({str(_tw_direct_err)[:60]})")
+
+                    if tw_raw:
+                        async def _sum_tweet(a: dict) -> BlogItem:
+                            async with sem:
+                                summary, u = await asyncio.to_thread(_summarize_text, a["title"], "", _sum_client)
+                                _merge_usage(usage_totals, u)
+                                return BlogItem(source="twitter", title=a["title"], summary=summary,
+                                                url=a["url"], author=a.get("author"))
+                        twitter_blogs = list(await asyncio.gather(*[_sum_tweet(a) for a in tw_raw]))
                     else:
-                        yield emit("step", "  → all Nitter instances unavailable, skipping Twitter")
+                        yield emit("step", "  → Twitter: no results from any source")
                 except Exception as _tw_err:
-                    logger.warning(f"[BROWSER] Twitter/Nitter phase failed: {_tw_err}")
+                    logger.warning(f"[BROWSER] Twitter phase failed: {_tw_err}")
                     yield emit("step", f"  → Twitter failed ({type(_tw_err).__name__}: {str(_tw_err)[:80]})")
 
                 yield emit("step", f"Closing browser... (reddit={len(reddit_blogs)}, yt={len(youtube_blogs)}, news={len(news_blogs)}, twitter={len(twitter_blogs)})")
