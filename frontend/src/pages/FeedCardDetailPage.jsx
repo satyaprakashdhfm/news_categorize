@@ -154,7 +154,7 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
       }
 
       if (runId) {
-        await feedCardsApi.attachRun({ run_id: runId, query: card.title, title: card.title, domain: card.domain, subdomain: card.subdomain });
+        await feedCardsApi.attachRun({ run_id: runId, card_id: card.id, query: card.title, title: card.title, domain: card.domain, subdomain: card.subdomain });
         // Load items directly from the new run_id — never use loadItems() here
         // because its useCallback closure still holds the OLD card.run_id.
         try {

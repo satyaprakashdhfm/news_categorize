@@ -48,6 +48,7 @@ class AttachRunRequest(BaseModel):
     title: Optional[str] = None
     domain: Optional[str] = None
     subdomain: Optional[str] = None
+    card_id: Optional[str] = None  # if given, update this exact card
 
 
 class AttachRunResponse(BaseModel):

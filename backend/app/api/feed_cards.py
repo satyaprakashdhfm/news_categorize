@@ -440,6 +440,14 @@ def attach_run(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
 ):
+    # Priority: if caller knows the exact card to update, skip all matching logic
+    if payload.card_id:
+        target = db.query(FeedCard).filter(FeedCard.id == payload.card_id).first()
+        if target:
+            target.run_id = payload.run_id
+            db.commit()
+            return AttachRunResponse(merged=True, card_id=target.id, message="Updated card run_id directly")
+
     # Case 1: domain+subdomain given → always link to the DOMAIN card (never create a parallel custom card)
     if payload.domain and payload.subdomain:
         domain_card = (
