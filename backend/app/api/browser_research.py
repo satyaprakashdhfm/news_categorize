@@ -635,7 +635,8 @@ async def _fetch_reddit_global_search(
     safe_limit = min(max(limit, 1), 25)
     _proxy, _proxy_auth = _parse_proxy(settings.REDDIT_PROXY_URL or "")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    short_query = " ".join(query.split()[:6])
+    kw = list(_tokenize_meaningful(query))
+    short_query = " ".join(kw[:6]) if kw else " ".join(query.split()[:6])
 
     posts_data: list[dict] = []
     async with aiohttp.ClientSession(headers=headers) as session:
@@ -1090,47 +1091,17 @@ async def run_live_browser_stream(
 
                 subreddits: list[str] = subreddit_plan[:5]
 
-                unique_subs = subreddits
-                yield emit("step", f"Selected subreddits: {', '.join(f'r/{s}' for s in subreddits)}")
+                unique_subs = subreddit_plan
 
-                # ── PHASE 1: Reddit — JSON API via proxy (proven reliable) ──
-                reddit_blogs: list[BlogItem] = []
-                sem = asyncio.Semaphore(5)
-                for sub in subreddits:
-                    browser_url = f"https://www.reddit.com/r/{sub}/"
-                    yield emit("step", f"r/{sub} → fetching posts via Reddit API")
-                    for ev in await nav(browser_url, t=25000):
-                        yield ev
-                    posts, usage_counts, diag = await _fetch_reddit_posts_for_community(
-                        community=sub, query=query, posts_per_community=6, client=_sum_client
-                    )
-                    _merge_usage(usage_totals, usage_counts)
-                    reddit_blogs.extend(posts)
-                    status_hint = f" ({diag})" if diag and len(posts) == 0 else ""
-                    yield emit("step", f"  → {len(posts)} posts from r/{sub}{status_hint}")
-
-                yield emit("step", f"Reddit done: {len(reddit_blogs)} posts from {len(subreddits)} subreddits")
-
-                # ── PHASE 1b: Reddit global search (topic-agnostic backup) ──
-                yield emit("step", f"Reddit global search for '{query[:60]}' (past week)...")
-                global_posts, global_usage = await _fetch_reddit_global_search(query, limit=10, client=_sum_client)
-                _merge_usage(usage_totals, global_usage)
-                # Deduplicate by URL before merging; apply keyword filter only to global results
-                # (subreddit posts from LLM-selected subs are already targeted — don't over-filter)
-                existing_urls = {p.url for p in reddit_blogs}
-                new_global = [p for p in global_posts if p.url not in existing_urls]
-                q_terms = _tokenize_meaningful(query)
-                if q_terms and new_global:
-                    before_g = len(new_global)
-                    new_global = [
-                        p for p in new_global
-                        if q_terms.intersection(_tokenize_meaningful(f"{p.title} {p.summary}"))
-                    ]
-                    dropped_g = before_g - len(new_global)
-                    if dropped_g:
-                        yield emit("step", f"  → Dropped {dropped_g} off-topic global posts (keyword filter)")
-                reddit_blogs.extend(new_global)
-                yield emit("step", f"  → {len(new_global)} additional posts from global search (total: {len(reddit_blogs)})")
+                # ── PHASE 1: Reddit global search (query-first, no subreddit picking) ──
+                # Searching all of Reddit by query is more accurate than picking subreddits
+                # and fetching their hot/top posts (which are often off-topic).
+                yield emit("step", f"Reddit search: '{_search_str}' (past week)...")
+                reddit_blogs, reddit_usage = await _fetch_reddit_global_search(
+                    query, limit=20, client=_sum_client
+                )
+                _merge_usage(usage_totals, reddit_usage)
+                yield emit("step", f"  → {len(reddit_blogs)} posts from Reddit search")
 
                 # Switch to a clean context (no proxy) for YouTube + News
                 await _reddit_ctx.close()
