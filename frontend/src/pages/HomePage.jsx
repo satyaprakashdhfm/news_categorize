@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import FilterBar from '@/components/FilterBar';
 import FeedCard from '@/components/FeedCard';
-import { feedCardsApi, recommendationsApi } from '@/services/api';
+import { feedCardsApi, recommendationsApi, statsApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { CATEGORIES, SUBCATEGORY_LABELS, INTEREST_TREE } from '@/utils/helpers';
 
@@ -41,6 +41,62 @@ function TrendingShimmer() {
           ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+function UserStatsWidget({ stats }) {
+  const total = stats?.total ?? null;
+  const today = stats?.today ?? 0;
+  const daily = stats?.daily ?? [];
+
+  const maxVal = Math.max(...daily, 1);
+
+  return (
+    <div className="metric" style={{ minWidth: 120, position: 'relative' }}>
+      <span className="eyebrow" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+          <circle cx="6" cy="4" r="2" stroke="currentColor" strokeWidth="1.3"/>
+          <path d="M2 10 Q2 7 6 7 Q10 7 10 10" stroke="currentColor" strokeWidth="1.3"/>
+        </svg>
+        Members
+      </span>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
+        <span className="metric__val">
+          {total === null ? '—' : total.toLocaleString()}
+        </span>
+        {today > 0 && (
+          <span style={{
+            fontSize: 10, fontWeight: 700,
+            color: '#4cba6e',
+            background: 'rgba(76,186,110,0.12)',
+            border: '1px solid rgba(76,186,110,0.25)',
+            borderRadius: 4, padding: '1px 5px',
+            marginBottom: 2, flexShrink: 0,
+          }}>
+            +{today} today
+          </span>
+        )}
+      </div>
+      {/* 7-day sparkline */}
+      {daily.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 18, marginTop: 4 }}>
+          {daily.map((v, i) => (
+            <div
+              key={i}
+              title={`${v} joined`}
+              style={{
+                flex: 1,
+                height: `${Math.max(2, Math.round((v / maxVal) * 18))}px`,
+                borderRadius: 2,
+                background: i === daily.length - 1 ? 'var(--accent)' : 'var(--line-1)',
+                transition: 'height 0.3s',
+              }}
+            />
+          ))}
+        </div>
+      )}
+      <span className="eyebrow" style={{ marginTop: 2, display: 'block' }}>7-day growth</span>
     </div>
   );
 }
@@ -269,6 +325,8 @@ export default function HomePage({ isDark, toggleDark }) {
   const [hotLoading, setHotLoading] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
+  const [userStats, setUserStats] = useState(null);
+
   const loadGlobal = useCallback(async () => {
     setGlobalLoading(true);
     setGlobalError('');
@@ -338,8 +396,16 @@ export default function HomePage({ isDark, toggleDark }) {
     }
   }, []);
 
+  const loadUserStats = useCallback(async () => {
+    try {
+      const data = await statsApi.getUsers();
+      setUserStats(data);
+    } catch { /* silent */ }
+  }, []);
+
   useEffect(() => { loadGlobal(); }, [loadGlobal]);
   useEffect(() => { loadHot(); }, [loadHot]);
+  useEffect(() => { loadUserStats(); }, [loadUserStats]);
   useEffect(() => { if (isAuthenticated) loadMyPins(); }, [loadMyPins, isAuthenticated]);
   useEffect(() => { if (activeTab === 'your') loadMyCards(); }, [activeTab, loadMyCards]);
   useEffect(() => { if (activeTab === 'saved' && isAuthenticated) loadMyPins(); }, [activeTab, isAuthenticated]);
@@ -404,6 +470,7 @@ export default function HomePage({ isDark, toggleDark }) {
               <span className="eyebrow">{activeCountLabel}</span>
               <span className="metric__val">{activeCount}</span>
             </div>
+            <UserStatsWidget stats={userStats} />
             <Link to="/custom/browser" className="btn btn--primary btn--lg">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2V12 M2 7H12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
               New Research Card

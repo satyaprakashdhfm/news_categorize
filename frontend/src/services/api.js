@@ -90,6 +90,11 @@ export const hackerNewsApi = {
   getNew: (limit = 30) => api.get('/hackernews/new', { params: { limit } }).then((r) => r.data),
 };
 
+// ── Stats ─────────────────────────────────────────────────────────────────────
+export const statsApi = {
+  getUsers: () => api.get('/stats/users').then((r) => r.data),
+};
+
 // ── RSS Feeds ─────────────────────────────────────────────────────────────────
 export const rssApi = {
   getForDomain: (domainCode, limitPerFeed = 6) =>
