@@ -42,6 +42,18 @@ class RedditScrapingService:
         return "top", {"t": "day"}
 
     @staticmethod
+    def _parse_proxy(proxy_url: str):
+        if not proxy_url:
+            return None, None
+        from urllib.parse import urlparse
+        p = urlparse(proxy_url)
+        if p.username and p.password:
+            clean = f"{p.scheme}://{p.hostname}:{p.port}"
+            auth = aiohttp.BasicAuth(p.username, p.password)
+            return clean, auth
+        return proxy_url, None
+
+    @staticmethod
     def _fallback_summary(title: str, selftext: str | None) -> str:
         content = (selftext or "").strip().replace("\n", " ")
         if content:
@@ -148,9 +160,9 @@ class RedditScrapingService:
         url = f"https://www.reddit.com/r/{subreddit}/{path}.json"
         params = {"limit": str(limit), **extra}
 
-        _proxy = settings.REDDIT_PROXY_URL or None
+        _proxy, _proxy_auth = self._parse_proxy(settings.REDDIT_PROXY_URL or "")
         try:
-            async with session.get(url, params=params, timeout=25, proxy=_proxy) as resp:
+            async with session.get(url, params=params, timeout=25, proxy=_proxy, proxy_auth=_proxy_auth) as resp:
                 if resp.status != 200:
                     logger.warning(f"[REDDIT] {subreddit} fetch failed: {resp.status}")
                     return {"community": subreddit, "mode": mode, "posts": []}
@@ -178,7 +190,7 @@ class RedditScrapingService:
             if permalink:
                 comments_url = f"https://www.reddit.com{permalink}.json"
                 try:
-                    async with session.get(comments_url, params={"limit": "25", "sort": "top"}, timeout=25, proxy=_proxy) as c_resp:
+                    async with session.get(comments_url, params={"limit": "25", "sort": "top"}, timeout=25, proxy=_proxy, proxy_auth=_proxy_auth) as c_resp:
                         if c_resp.status == 200:
                             comment_payload = await c_resp.json()
                             comment_lines = self._collect_comment_lines(comment_payload, max_items=35)
