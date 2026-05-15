@@ -163,6 +163,46 @@ def get_global_cards(
     return FeedCardListResponse(cards=cards, total=total)
 
 
+# ── Hot cards (public, flat ranked list for sidebar) ─────────────────────────
+
+@router.get("/hot", response_model=dict)
+def get_hot_cards(
+    limit: int = Query(8, ge=1, le=20),
+    db: Session = Depends(get_db),
+):
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    cards = db.query(FeedCard).all()
+
+    def _score(card):
+        s = 0
+        if card.run_id:
+            s += 100
+        s += len(card.pinned_by) * 10
+        if card.updated_at and (now - card.updated_at).total_seconds() < 86400:
+            s += 50
+        return s
+
+    top = sorted(cards, key=_score, reverse=True)[:limit]
+    return {
+        "cards": [
+            {
+                "id": c.id,
+                "title": c.title,
+                "domain": c.domain,
+                "subdomain": c.subdomain,
+                "pinned_count": c.pinned_count,
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+                "run_id": c.run_id,
+                "type": c.type,
+                "created_by": c.created_by,
+                "is_global": c.is_global,
+            }
+            for c in top
+        ]
+    }
+
+
 # ── Trending cards (public, grouped by domain/subdomain) ───────────────────
 
 @router.get("/trending", response_model=dict)

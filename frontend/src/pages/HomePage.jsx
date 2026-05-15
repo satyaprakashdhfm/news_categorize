@@ -45,66 +45,69 @@ function TrendingShimmer() {
   );
 }
 
-function TrendingSidebar({ trending, navigate }) {
-  const [openIds, setOpenIds] = useState(new Set(['TEC', 'ECO']));
-  const toggle = (id) => {
-    const next = new Set(openIds);
-    next.has(id) ? next.delete(id) : next.add(id);
-    setOpenIds(next);
-  };
-
-  const domainOrder = ['TEC', 'ECO', 'POL', 'BUS', 'OTH'];
-  const sortedDomains = Object.keys(trending).sort(
-    (a, b) => domainOrder.indexOf(a) - domainOrder.indexOf(b),
-  );
-
-  if (sortedDomains.length === 0) {
-    return <div className="meta" style={{ textAlign: 'center', padding: '24px 0' }}>No trending data yet.</div>;
+function HotCardsSidebar({ cards, navigate }) {
+  if (!cards.length) {
+    return <div className="meta" style={{ textAlign: 'center', padding: '24px 0' }}>No cards yet.</div>;
   }
 
   return (
-    <>
-      {sortedDomains.map((domain) => {
-        const domainInfo = INTEREST_TREE.find((d) => d.code === domain);
-        const subdomains = trending[domain];
-        const isOpen = openIds.has(domain);
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {cards.map((card, i) => {
+        const color = DOMAIN_COLORS_CSS[card.domain] || DOMAIN_COLORS_CSS.OTH;
+        const subLabel = SUBCATEGORY_LABELS[card.subdomain] || card.subdomain;
+        const hasSaves = card.pinned_count > 0;
+        const hasContent = !!card.run_id;
+
+        const signal = hasSaves
+          ? { label: `↑ ${card.pinned_count}`, color: 'var(--accent)' }
+          : hasContent
+            ? { label: 'Live', color: '#4cba6e' }
+            : { label: 'New', color: 'var(--fg-4)' };
 
         return (
-          <div key={domain} className={`dom ${isOpen ? 'is-open' : ''}`}>
-            <button className="dom__head" onClick={() => toggle(domain)}>
-              <span className="dom__dot" style={{ background: DOMAIN_COLORS_CSS[domain] || 'var(--fg-3)' }} />
-              <span className="dom__name">{domainInfo ? `${domainInfo.icon} ${domainInfo.label}` : domain}</span>
-              <span className={`pulse pulse--${isOpen ? 'live' : 'steady'}`}>
-                <span className="pulse__ring" /><span className="pulse__core" />
-              </span>
-              <svg className="dom__chev" width="10" height="10" viewBox="0 0 10 10">
-                <path d="M2 3.5 L5 6.5 L8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </button>
-            {isOpen && (
-              <ul className="dom__list">
-                {Object.entries(subdomains).map(([subdomain, cards]) => {
-                  // Prefer cards with content (run_id), then most pinned
-                  const best = [...cards].sort((a, b) => {
-                    if (!!a.run_id !== !!b.run_id) return a.run_id ? -1 : 1;
-                    return (b.pinned_count || 0) - (a.pinned_count || 0);
-                  })[0];
-                  return (
-                    <li key={subdomain} className="dom__item" onClick={() => best && navigate(`/feed/${best.id}`)}>
-                      <span className="dom__itemName">{SUBCATEGORY_LABELS[subdomain] || subdomain}</span>
-                      <span className="dom__itemMeta">
-                        {cards.length >= 10 && <span className="dom__hot">hot</span>}
-                        <span className="dom__count">{cards.length}</span>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+          <button
+            key={card.id}
+            onClick={() => navigate(`/feed/${card.id}`)}
+            style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+              padding: '9px 10px', borderRadius: 'var(--r-md)',
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              textAlign: 'left', width: '100%', transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-2)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            <span style={{
+              fontSize: 10, fontWeight: 700, color: 'var(--fg-4)',
+              minWidth: 14, paddingTop: 3, lineHeight: 1,
+            }}>
+              {i + 1}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{
+                fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--fg-1)',
+                margin: 0, lineHeight: 1.4,
+                display: '-webkit-box', WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical', overflow: 'hidden',
+              }}>
+                {card.title}
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                {subLabel && (
+                  <span style={{ fontSize: 10, color: 'var(--fg-3)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 90 }}>
+                    {subLabel}
+                  </span>
+                )}
+                <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: signal.color, flexShrink: 0 }}>
+                  {signal.label}
+                </span>
+              </div>
+            </div>
+          </button>
         );
       })}
-    </>
+    </div>
   );
 }
 
@@ -219,8 +222,8 @@ export default function HomePage({ isDark, toggleDark }) {
   const [recs, setRecs] = useState([]);
   const [recsLoading, setRecsLoading] = useState(false);
 
-  const [trending, setTrending] = useState({});
-  const [trendingLoading, setTrendingLoading] = useState(false);
+  const [hotCards, setHotCards] = useState([]);
+  const [hotLoading, setHotLoading] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
   const loadGlobal = useCallback(async () => {
@@ -282,18 +285,18 @@ export default function HomePage({ isDark, toggleDark }) {
     }
   }, [isAuthenticated, domain]);
 
-  const loadTrending = useCallback(async () => {
-    setTrendingLoading(true);
+  const loadHot = useCallback(async () => {
+    setHotLoading(true);
     try {
-      const res = await feedCardsApi.getTrending({ limit_per_subdomain: 3 });
-      setTrending(res.trending || {});
+      const res = await feedCardsApi.getHot({ limit: 8 });
+      setHotCards(res.cards || []);
     } catch { /* silent */ } finally {
-      setTrendingLoading(false);
+      setHotLoading(false);
     }
   }, []);
 
   useEffect(() => { loadGlobal(); }, [loadGlobal]);
-  useEffect(() => { loadTrending(); }, [loadTrending]);
+  useEffect(() => { loadHot(); }, [loadHot]);
   useEffect(() => { if (isAuthenticated) loadMyPins(); }, [loadMyPins, isAuthenticated]);
   useEffect(() => { if (activeTab === 'your') loadMyCards(); }, [activeTab, loadMyCards]);
   useEffect(() => { if (activeTab === 'saved' && isAuthenticated) loadMyPins(); }, [activeTab, isAuthenticated]);
@@ -376,9 +379,9 @@ export default function HomePage({ isDark, toggleDark }) {
               </span>
             </div>
             <div className="sidebar__scroll">
-              {trendingLoading && Object.keys(trending).length === 0
+              {hotLoading && hotCards.length === 0
                 ? <TrendingShimmer />
-                : <TrendingSidebar trending={trending} navigate={navigate} />
+                : <HotCardsSidebar cards={hotCards} navigate={navigate} />
               }
             </div>
             <div className="sidebar__foot">
