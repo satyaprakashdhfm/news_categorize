@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import Header from '@/components/Header';
 import { sourcesApi } from '@/services/api';
@@ -53,16 +53,41 @@ function getShortUrl(url) {
 function AddSourceModal({ onClose, onAdded }) {
   const [form, setForm] = useState({ name: '', url: '', description: '', domain: 'general' });
   const [detectedType, setDetectedType] = useState('web');
+  const [domainDetecting, setDomainDetecting] = useState(false);
+  const [domainAiSet, setDomainAiSet] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+  const detectTimer = useRef(null);
+
+  const triggerDomainDetect = (name, url) => {
+    if (!name && !url) return;
+    clearTimeout(detectTimer.current);
+    detectTimer.current = setTimeout(async () => {
+      setDomainDetecting(true);
+      try {
+        const res = await sourcesApi.detectDomain(name, url);
+        setForm(f => ({ ...f, domain: res.domain }));
+        setDomainAiSet(true);
+      } catch { /* keep current */ }
+      finally { setDomainDetecting(false); }
+    }, 800);
+  };
+
+  const handleNameChange = (val) => {
+    setForm(f => ({ ...f, name: val }));
+    setDomainAiSet(false);
+    triggerDomainDetect(val, form.url);
+  };
 
   const handleUrlChange = (val) => {
     setForm(f => ({ ...f, url: val }));
+    setDomainAiSet(false);
     const u = val.toLowerCase();
     if (u.includes('youtube.com') || u.includes('youtu.be')) setDetectedType('youtube');
     else if (u.includes('twitter.com') || u.includes('x.com')) setDetectedType('twitter');
     else if (u.includes('reddit.com')) setDetectedType('reddit');
     else setDetectedType('web');
+    triggerDomainDetect(form.name, val);
   };
 
   const submit = async () => {
@@ -78,6 +103,7 @@ function AddSourceModal({ onClose, onAdded }) {
   };
 
   const tm = TYPE_META[detectedType];
+  const domStyle = DOMAIN_COLORS[form.domain] || DOMAIN_COLORS.general;
 
   return (
     <div style={{
@@ -98,7 +124,7 @@ function AddSourceModal({ onClose, onAdded }) {
             <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Name *</label>
             <input
               value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              onChange={e => handleNameChange(e.target.value)}
               placeholder="e.g. Ars Technica, Wendover Productions"
               style={{ width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-sm)', border: '1px solid var(--line-1)', background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, boxSizing: 'border-box' }}
             />
@@ -115,23 +141,46 @@ function AddSourceModal({ onClose, onAdded }) {
             {form.url && (
               <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ color: tm.color, display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
-                  {tm.icon} Detected: {tm.label}
+                  {tm.icon} {tm.label}
                 </span>
               </div>
             )}
           </div>
 
+          {/* Domain — AI auto-detected, user can override */}
           <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Domain</label>
-            <select
-              value={form.domain}
-              onChange={e => setForm(f => ({ ...f, domain: e.target.value }))}
-              style={{ width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-sm)', border: '1px solid var(--line-1)', background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, boxSizing: 'border-box' }}
-            >
-              {DOMAINS.filter(d => d !== 'all').map(d => (
-                <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Domain</label>
+              {domainDetecting && (
+                <span style={{ fontSize: 10, color: 'var(--fg-4)' }}>AI detecting...</span>
+              )}
+              {domainAiSet && !domainDetecting && (
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: domStyle.bg, color: domStyle.color }}>
+                  ✦ AI: {form.domain}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {DOMAINS.filter(d => d !== 'all').map(d => {
+                const dc = DOMAIN_COLORS[d] || DOMAIN_COLORS.general;
+                const active = form.domain === d;
+                return (
+                  <button
+                    key={d}
+                    onClick={() => { setForm(f => ({ ...f, domain: d })); setDomainAiSet(false); }}
+                    style={{
+                      padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      border: `1px solid ${active ? dc.color : 'var(--line-1)'}`,
+                      background: active ? dc.bg : 'transparent',
+                      color: active ? dc.color : 'var(--fg-4)',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {d.charAt(0).toUpperCase() + d.slice(1)}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div>
@@ -149,8 +198,8 @@ function AddSourceModal({ onClose, onAdded }) {
 
           <button
             onClick={submit}
-            disabled={saving}
-            style={{ padding: '9px 0', borderRadius: 'var(--r-sm)', background: 'var(--fg-1)', color: 'var(--bg-0)', fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
+            disabled={saving || domainDetecting}
+            style={{ padding: '9px 0', borderRadius: 'var(--r-sm)', background: 'var(--fg-1)', color: 'var(--bg-0)', fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer', opacity: (saving || domainDetecting) ? 0.6 : 1 }}
           >
             {saving ? 'Adding...' : 'Add Source'}
           </button>

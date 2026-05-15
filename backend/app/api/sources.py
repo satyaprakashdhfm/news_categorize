@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -10,6 +11,36 @@ from app.models.source import Source, SourceVote
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
 DOMAINS = ["general", "technology", "defence", "science", "business", "politics", "health", "environment", "sports"]
+
+
+async def _ai_detect_domain(name: str, url: str) -> str:
+    """Ask Ollama to classify a source into one of the known domains."""
+    try:
+        from app.core.ollama_client import get_llm_client, get_active_model
+        from app.api.browser_research import _extract_response_text
+        client = get_llm_client()
+        model = get_active_model()
+        prompt = (
+            f'Source name: "{name}"\nURL: {url}\n\n'
+            f'Which single domain does this news/media source belong to?\n'
+            f'Choose ONLY ONE from: technology, defence, science, business, politics, health, environment, sports, general\n'
+            f'Reply with ONLY the domain word, nothing else.'
+        )
+        resp = await asyncio.to_thread(client.models.generate_content, model=model, contents=prompt)
+        text = _extract_response_text(resp).strip().lower().split()[0]
+        return text if text in DOMAINS else "general"
+    except Exception:
+        return "general"
+
+
+@router.post("/detect-domain")
+async def detect_domain(data: dict):
+    name = (data.get("name") or "").strip()
+    url = (data.get("url") or "").strip()
+    if not name and not url:
+        return {"domain": "general"}
+    domain = await _ai_detect_domain(name, url)
+    return {"domain": domain}
 
 
 def _detect_type(url: str) -> str:

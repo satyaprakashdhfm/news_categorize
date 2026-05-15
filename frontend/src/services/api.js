@@ -103,6 +103,7 @@ export const sourcesApi = {
   add: (data) => api.post('/sources', data).then((r) => r.data),
   vote: (id, vote) => api.post(`/sources/${id}/vote`, { vote }).then((r) => r.data),
   remove: (id) => api.delete(`/sources/${id}`).then((r) => r.data),
+  detectDomain: (name, url) => api.post('/sources/detect-domain', { name, url }).then((r) => r.data),
 };
 
 // ── RSS Feeds ─────────────────────────────────────────────────────────────────
