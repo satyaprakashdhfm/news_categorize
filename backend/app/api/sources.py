@@ -10,54 +10,76 @@ from app.models.source import Source, SourceVote
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
-DOMAINS = [
-    "general", "software-ai", "technology", "defence", "science",
-    "business", "politics", "health", "environment", "sports",
-]
+# Mirror of frontend INTEREST_TREE — top-level domain → subdomain codes
+DOMAIN_TREE = {
+    "TEC": ["SAI", "LLM", "AGT", "WEB", "MOB", "CLD", "SEC", "DAT", "OSS", "ROB", "BLK", "HRD", "SPC", "PHY", "BIO", "DEF", "NMI"],
+    "BUS": ["SCA", "MID", "FIN", "INV", "MON", "TRD"],
+    "POL": ["GEO", "EXE", "LEG", "JUD", "DIP"],
+    "ECO": ["MAC", "MIC", "ENE", "CLM"],
+    "OTH": ["SCI", "HEA", "EDU", "GAM"],
+}
 
 DOMAIN_LABELS = {
-    "software-ai": "Software & AI",
-    "technology": "Technology",
-    "defence": "Defence",
-    "science": "Science",
-    "business": "Business",
-    "politics": "Politics",
-    "health": "Health",
-    "environment": "Environment",
-    "sports": "Sports",
-    "general": "General",
+    "TEC": "Technology", "BUS": "Business & Finance", "POL": "Politics & World",
+    "ECO": "Economy", "OTH": "Science & Society",
+    "SAI": "Software & AI", "LLM": "LLMs & Generative AI", "AGT": "AI Agents",
+    "WEB": "Web Development", "MOB": "Mobile Development", "CLD": "Cloud & DevOps",
+    "SEC": "Cybersecurity", "DAT": "Data Science", "OSS": "Open Source",
+    "ROB": "Robotics", "BLK": "Blockchain & Crypto", "HRD": "Hardware & Chips",
+    "SPC": "Space", "PHY": "Physics & Quantum", "BIO": "Biotech & Genomics",
+    "DEF": "Defence Technology", "NMI": "Nano & Materials",
+    "SCA": "Startups & VC", "MID": "Markets & Industry", "FIN": "FinTech",
+    "INV": "Investing", "MON": "Monetary Policy", "TRD": "Trade & Economy",
+    "GEO": "Geopolitics", "EXE": "Government", "LEG": "Legislature & Policy",
+    "JUD": "Judiciary & Law", "DIP": "Diplomacy & Security",
+    "MAC": "Macroeconomics", "MIC": "Microeconomics", "ENE": "Energy & Resources",
+    "CLM": "Climate & Environment",
+    "SCI": "General Science", "HEA": "Health & Medicine", "EDU": "Education",
+    "GAM": "Gaming & Media",
 }
+
+# All valid codes (top-level + subdomains)
+DOMAINS = list(DOMAIN_TREE.keys()) + [c for subs in DOMAIN_TREE.values() for c in subs]
 
 
 async def _ai_detect_info(name: str, url: str) -> dict:
-    """Ask Ollama to suggest domain + one-line description for a source."""
+    """Ask Ollama to suggest a domain code + one-line description for a source."""
     try:
         from app.core.ollama_client import get_llm_client, get_active_model
         from app.api.browser_research import _extract_response_text
         import re
         client = get_llm_client()
         model = get_active_model()
-        domains_str = ", ".join(DOMAINS)
+        codes_hint = (
+            "TEC=Technology, BUS=Business & Finance, POL=Politics & World, ECO=Economy, OTH=Science & Society\n"
+            "Sub-codes (prefer these when specific):\n"
+            "SAI=Software & AI, LLM=LLMs & Generative AI, AGT=AI Agents, SEC=Cybersecurity, DAT=Data Science,\n"
+            "DEF=Defence Technology, BIO=Biotech & Genomics, SPC=Space, ROB=Robotics, HRD=Hardware & Chips,\n"
+            "SCA=Startups & VC, FIN=FinTech, INV=Investing, TRD=Trade & Economy,\n"
+            "GEO=Geopolitics, DIP=Diplomacy & Security, EXE=Government,\n"
+            "ENE=Energy & Resources, CLM=Climate & Environment,\n"
+            "HEA=Health & Medicine, SCI=General Science, EDU=Education, GAM=Gaming & Media"
+        )
         prompt = (
             f'Source name: "{name}"\nURL: {url}\n\n'
-            f'1. DOMAIN: Which single domain fits best? Choose from: {domains_str}\n'
-            f'   Use "software-ai" for anything about AI, ML, LLMs, software engineering, or coding.\n'
-            f'2. DESCRIPTION: Write one sentence (max 120 chars) describing what this source covers.\n\n'
+            f'Domain codes:\n{codes_hint}\n\n'
+            f'1. DOMAIN: Choose the most specific code that fits (e.g. SAI not TEC for an AI blog).\n'
+            f'2. DESCRIPTION: One sentence (max 120 chars) describing what this source covers.\n\n'
             f'Reply in exactly this format:\n'
-            f'DOMAIN: software-ai\n'
-            f'DESCRIPTION: Weekly AI/ML research digest by Andrew Ng covering industry trends.'
+            f'DOMAIN: SAI\n'
+            f'DESCRIPTION: Weekly AI/ML digest by Andrew Ng covering research and industry trends.'
         )
         resp = await asyncio.to_thread(client.models.generate_content, model=model, contents=prompt)
         text = _extract_response_text(resp).strip()
         domain_m = re.search(r'DOMAIN:\s*(\S+)', text, re.IGNORECASE)
         desc_m = re.search(r'DESCRIPTION:\s*(.+)', text, re.IGNORECASE)
-        domain = domain_m.group(1).strip().lower() if domain_m else "general"
+        domain = domain_m.group(1).strip().upper() if domain_m else "TEC"
         if domain not in DOMAINS:
-            domain = "general"
+            domain = "TEC"
         description = desc_m.group(1).strip()[:200] if desc_m else ""
         return {"domain": domain, "description": description}
     except Exception:
-        return {"domain": "general", "description": ""}
+        return {"domain": "TEC", "description": ""}
 
 
 @router.post("/detect-info")
@@ -116,7 +138,11 @@ def list_sources(
     )
 
     if domain and domain != "all":
-        q = q.filter(Source.domain == domain)
+        # If top-level code, include all its subdomains too
+        if domain in DOMAIN_TREE:
+            q = q.filter(Source.domain.in_([domain] + DOMAIN_TREE[domain]))
+        else:
+            q = q.filter(Source.domain == domain)
 
     if sort == "new":
         q = q.order_by(Source.created_at.desc())
@@ -170,9 +196,9 @@ def add_source(
     if not description:
         raise HTTPException(400, "description is required")
 
-    domain = data.get("domain") or "general"
+    domain = (data.get("domain") or "TEC").upper()
     if domain not in DOMAINS:
-        domain = "general"
+        domain = "TEC"
 
     src = Source(
         name=name,

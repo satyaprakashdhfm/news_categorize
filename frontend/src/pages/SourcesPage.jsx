@@ -2,34 +2,27 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import Header from '@/components/Header';
 import { sourcesApi } from '@/services/api';
+import { INTEREST_TREE, SUBCATEGORY_LABELS } from '@/utils/helpers';
 
-const DOMAINS = ['all', 'software-ai', 'technology', 'defence', 'science', 'business', 'politics', 'health', 'environment', 'sports', 'general'];
-
-const DOMAIN_LABELS = {
-  'software-ai': 'Software & AI',
-  technology:    'Technology',
-  defence:       'Defence',
-  science:       'Science',
-  business:      'Business',
-  politics:      'Politics',
-  health:        'Health',
-  environment:   'Environment',
-  sports:        'Sports',
-  general:       'General',
+// Top-level domain colours (matched to platform theme)
+const TOP_COLORS = {
+  TEC: { bg: 'rgba(249,115,22,0.12)',  color: '#f97316' },
+  BUS: { bg: 'rgba(139,92,246,0.12)',  color: '#8b5cf6' },
+  POL: { bg: 'rgba(59,130,246,0.12)',  color: '#3b82f6' },
+  ECO: { bg: 'rgba(16,185,129,0.12)', color: '#10b981' },
+  OTH: { bg: 'rgba(100,116,139,0.12)',color: '#64748b' },
 };
 
-const DOMAIN_COLORS = {
-  'software-ai': { bg: 'rgba(99,102,241,0.12)',  color: '#6366f1' },
-  technology:    { bg: 'rgba(59,130,246,0.12)',   color: '#3b82f6' },
-  defence:       { bg: 'rgba(239,68,68,0.12)',    color: '#ef4444' },
-  science:       { bg: 'rgba(16,185,129,0.12)',   color: '#10b981' },
-  business:      { bg: 'rgba(245,158,11,0.12)',   color: '#f59e0b' },
-  politics:      { bg: 'rgba(139,92,246,0.12)',   color: '#8b5cf6' },
-  health:        { bg: 'rgba(236,72,153,0.12)',   color: '#ec4899' },
-  environment:   { bg: 'rgba(34,197,94,0.12)',    color: '#22c55e' },
-  sports:        { bg: 'rgba(249,115,22,0.12)',   color: '#f97316' },
-  general:       { bg: 'rgba(100,116,139,0.12)',  color: '#64748b' },
+// All subdomain colours inherit from their parent
+const getDomainColor = (code) => {
+  if (TOP_COLORS[code]) return TOP_COLORS[code];
+  for (const d of INTEREST_TREE) {
+    if (d.subdomains.some(s => s.code === code)) return TOP_COLORS[d.code] || TOP_COLORS.OTH;
+  }
+  return { bg: 'rgba(100,116,139,0.12)', color: '#64748b' };
 };
+
+const getLabel = (code) => SUBCATEGORY_LABELS[code] || code;
 
 const TYPE_META = {
   youtube: { label: 'YouTube', color: '#ff0000', icon: (
@@ -138,7 +131,7 @@ function SourceFormModal({ onClose, onDone, existing }) {
   };
 
   const tm = TYPE_META[detectedType];
-  const domStyle = DOMAIN_COLORS[form.domain] || DOMAIN_COLORS.general;
+  const domStyle = getDomainColor(form.domain);
 
   return (
     <div style={{
@@ -186,18 +179,29 @@ function SourceFormModal({ onClose, onDone, existing }) {
                 <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: domStyle.bg, color: domStyle.color }}>✦ AI suggested</span>
               )}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {DOMAINS.filter(d => d !== 'all').map(d => {
-                const dc = DOMAIN_COLORS[d] || DOMAIN_COLORS.general;
-                const active = form.domain === d;
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {INTEREST_TREE.map(parent => {
+                const pc = TOP_COLORS[parent.code];
                 return (
-                  <button key={d} onClick={() => { setForm(f => ({ ...f, domain: d })); setAiSet(false); }}
-                    style={{ padding: '4px 11px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                      border: `1px solid ${active ? dc.color : 'var(--line-1)'}`,
-                      background: active ? dc.bg : 'transparent',
-                      color: active ? dc.color : 'var(--fg-4)', transition: 'all 0.15s' }}>
-                    {DOMAIN_LABELS[d] || d}
-                  </button>
+                  <div key={parent.code}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: pc.color, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                      {parent.label}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                      {parent.subdomains.map(s => {
+                        const active = form.domain === s.code;
+                        return (
+                          <button key={s.code} onClick={() => { setForm(f => ({ ...f, domain: s.code })); setAiSet(false); }}
+                            style={{ padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                              border: `1px solid ${active ? pc.color : 'var(--line-1)'}`,
+                              background: active ? pc.bg : 'transparent',
+                              color: active ? pc.color : 'var(--fg-4)', transition: 'all 0.12s' }}>
+                            {s.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -231,7 +235,7 @@ function SourceFormModal({ onClose, onDone, existing }) {
 }
 
 function SourceCard({ src, onVote, isAuthenticated, onEdit }) {
-  const domStyle = DOMAIN_COLORS[src.domain] || DOMAIN_COLORS.general;
+  const domStyle = getDomainColor(src.domain);
   const tm = TYPE_META[src.source_type] || TYPE_META.web;
   const favicon = getFavicon(src.url);
   const shortUrl = getShortUrl(src.url);
@@ -271,7 +275,7 @@ function SourceCard({ src, onVote, isAuthenticated, onEdit }) {
       {/* Badges */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '2px 8px', borderRadius: 99, background: domStyle.bg, color: domStyle.color }}>
-          {src.domain}
+          {getLabel(src.domain)}
         </span>
         <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--bg-2)', color: tm.color, display: 'flex', alignItems: 'center', gap: 4 }}>
           {tm.icon} {tm.label}
@@ -406,24 +410,21 @@ export default function SourcesPage({ isDark, toggleDark }) {
 
         {/* Filters */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-          {/* Domain tabs */}
+          {/* Domain tabs — top-level only, clicking shows all subdomains too */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {DOMAINS.map(d => {
-              const col = d !== 'all' ? (DOMAIN_COLORS[d] || DOMAIN_COLORS.general) : null;
+            {['all', ...INTEREST_TREE.map(d => d.code)].map(d => {
+              const col = d !== 'all' ? TOP_COLORS[d] : null;
               const active = domain === d;
               return (
-                <button
-                  key={d}
-                  onClick={() => setDomain(d)}
+                <button key={d} onClick={() => setDomain(d)}
                   style={{
                     padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid',
                     borderColor: active ? (col?.color || 'var(--fg-1)') : 'var(--line-1)',
                     background: active ? (col?.bg || 'var(--bg-2)') : 'transparent',
                     color: active ? (col?.color || 'var(--fg-1)') : 'var(--fg-3)',
                     transition: 'all 0.15s',
-                  }}
-                >
-                  {d === 'all' ? 'All' : d.charAt(0).toUpperCase() + d.slice(1)}
+                  }}>
+                  {d === 'all' ? 'All' : getLabel(d)}
                 </button>
               );
             })}
