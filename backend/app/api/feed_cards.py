@@ -146,7 +146,7 @@ def get_global_cards(
     db: Session = Depends(get_db),
 ):
     from datetime import datetime, timedelta
-    q = db.query(FeedCard)
+    q = db.query(FeedCard).filter(FeedCard.is_global == True)
     if domain:
         q = q.filter(FeedCard.domain == domain.upper())
     if subdomain:
@@ -270,8 +270,8 @@ def create_card(
     if payload.type == "custom" and not payload.run_id:
         raise HTTPException(status_code=400, detail="run_id required for custom cards")
 
-    # Custom research cards are always global; domain cards require admin
-    is_global = True if payload.type == "custom" else (payload.is_global if current_user.role == "admin" else False)
+    # Domain cards are always global (admin only); user custom cards are private by default
+    is_global = (payload.is_global if current_user.role == "admin" else False)
 
     card = FeedCard(
         id=str(uuid.uuid4()),
@@ -468,7 +468,7 @@ def attach_run(
             subdomain=payload.subdomain.upper(),
             run_id=payload.run_id,
             created_by=current_user.id if current_user else None,
-            is_global=True,
+            is_global=False,
         )
         db.add(card)
         db.commit()
@@ -534,7 +534,7 @@ def attach_run(
         subdomain=(payload.subdomain.upper() if payload.subdomain else auto_subdomain),
         run_id=payload.run_id,
         created_by=current_user.id if current_user else None,
-        is_global=True,
+        is_global=False,
     )
     db.add(card)
     db.commit()
