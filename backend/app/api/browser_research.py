@@ -1036,13 +1036,17 @@ async def run_live_browser_stream(
                     plan_prompt = (
                         f"You are a research planner. Query: '{query}'\n\n"
                         "Return JSON only — no markdown, no explanation:\n"
-                        '{"subreddits":["5 specific subreddit names most likely to have posts about this topic"],'
-                        '"youtube_query":"best YouTube search string for this topic",'
-                        '"news_query":"best Google News search string for recent news on this topic"}\n\n'
-                        "Subreddit names must match the query topic exactly. "
-                        "Example: for biotech queries use biology/Bioinformatics/biotech. "
-                        "For AI queries use MachineLearning/LocalLLaMA. "
-                        "Do NOT return generic ones like AskReddit, pics, funny, movies."
+                        '{"subreddits":["5 specific subreddit names most likely to have posts about this exact topic"],'
+                        '"youtube_query":"best YouTube search string for this topic (add relevant keywords)",'
+                        '"news_query":"best news search string for recent news on this topic (be specific)"}\n\n'
+                        "Rules for subreddits:\n"
+                        "- Pick subreddits whose PRIMARY topic directly matches the query subject\n"
+                        "- If query is about India defence/aviation: use india, IndianDefence, aviation, aerospace, geopolitics\n"
+                        "- If query is about economics: use economics, investing, financialindependence\n"
+                        "- If query is about politics: use worldnews, geopolitics, india, PoliticalDiscussion\n"
+                        "- NEVER pick subreddits just because they are popular (AskReddit, funny, pics, todayilearned, news)\n"
+                        "- NEVER pick tech/AI subreddits (MachineLearning, LocalLLaMA) unless the query is specifically about AI/ML\n"
+                        "- Prefer smaller, topic-specific subreddits over giant generic ones"
                     )
                     try:
                         resp = client.models.generate_content(model=GEMINI_MODEL, contents=plan_prompt)
@@ -1078,29 +1082,10 @@ async def run_live_browser_stream(
                 """)
                 yield emit("step", f"  → Found {len(explored_subs)} communities on explore page")
 
-                # LLM picks the most relevant from explored list + its own suggestions
+                # Use LLM-planned subreddits directly — don't mix with explore page subs
+                # (explore page shows trending/popular communities, not topic-relevant ones)
                 llm_subs = plan.get("subreddits") or []
-                candidate_pool = list(dict.fromkeys(llm_subs + explored_subs))[:50]
-
-                subreddits: list[str] = llm_subs[:5] or FALLBACK_SUBS  # default
-                # Skip the second LLM pick with Ollama — tiny models pick random subs
-                # from the explore page. The initial planning call subs are more reliable.
-                if client and candidate_pool and not settings.USE_OLLAMA:
-                    pick_prompt = (
-                        f"Query: '{query}'\n\n"
-                        f"From this list of subreddits, pick the 5 most relevant to the query:\n"
-                        f"{candidate_pool}\n\n"
-                        'Return JSON only: {"subreddits": ["name1","name2","name3","name4","name5"]}\n'
-                        "Only include subreddits from the provided list."
-                    )
-                    try:
-                        resp = client.models.generate_content(model=GEMINI_MODEL, contents=pick_prompt)
-                        _merge_usage(usage_totals, _usage_from_response(resp))
-                        picked = _extract_json(_extract_response_text(resp))
-                        if isinstance(picked, dict) and picked.get("subreddits"):
-                            subreddits = [_clean_sub_name(s) for s in picked["subreddits"] if _clean_sub_name(s)][:5]
-                    except Exception as e:
-                        logger.warning(f"[BROWSER] pick subs failed: {e}")
+                subreddits: list[str] = llm_subs[:5] if llm_subs else FALLBACK_SUBS
 
                 unique_subs = subreddits
                 yield emit("step", f"Selected subreddits: {', '.join(f'r/{s}' for s in subreddits)}")
@@ -1132,6 +1117,18 @@ async def run_live_browser_stream(
                 new_global = [p for p in global_posts if p.url not in existing_urls]
                 reddit_blogs.extend(new_global)
                 yield emit("step", f"  → {len(new_global)} additional posts from global search (total: {len(reddit_blogs)})")
+
+                # ── Keyword pre-filter: drop Reddit posts with 0 query-term overlap ──
+                q_terms = _tokenize_meaningful(query)
+                if q_terms:
+                    before = len(reddit_blogs)
+                    reddit_blogs = [
+                        p for p in reddit_blogs
+                        if q_terms.intersection(_tokenize_meaningful(f"{p.title} {p.summary}"))
+                    ]
+                    dropped = before - len(reddit_blogs)
+                    if dropped:
+                        yield emit("step", f"  → Dropped {dropped} off-topic Reddit posts (keyword filter)")
 
                 # Switch to a clean context (no proxy) for YouTube + News
                 await _reddit_ctx.close()
@@ -1281,7 +1278,7 @@ async def run_live_browser_stream(
                 all_blogs: list[BlogItem] = reddit_blogs + youtube_blogs + news_blogs
                 yield emit("step", f"Total collected: {len(all_blogs)} items. Running relevance scoring...")
                 blogs, rel_usage = await _filter_by_relevance(
-                    blogs=all_blogs, query=query, threshold=0.45, client=client
+                    blogs=all_blogs, query=query, threshold=0.0, client=client
                 )
                 _merge_usage(usage_totals, rel_usage)
 
