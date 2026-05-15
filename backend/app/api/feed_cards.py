@@ -450,7 +450,7 @@ def attach_run(
                 {"cid": card_id, "rid": run_id},
             )
         except Exception:
-            pass  # migration not yet applied — silently skip
+            db.rollback()  # reset broken session state so the caller's commit() still works
 
     # Priority: if caller knows the exact card to update, skip all matching logic
     if payload.card_id:
