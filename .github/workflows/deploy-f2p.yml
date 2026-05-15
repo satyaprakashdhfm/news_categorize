@@ -19,6 +19,23 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Sync secrets to VM .env
+        env:
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          REDDIT_PROXY_URL: ${{ secrets.REDDIT_PROXY_URL }}
+        run: |
+          ENV_FILE="/home/ubuntu/news_categorize/backend/.env"
+          COMMANDS=$(jq -cn --arg v "$REDDIT_PROXY_URL" --arg f "$ENV_FILE" '[
+            "grep -q \"^REDDIT_PROXY_URL=\" \($f) 2>/dev/null && sed -i \"s|^REDDIT_PROXY_URL=.*|REDDIT_PROXY_URL=\($v)|\" \($f) || echo \"REDDIT_PROXY_URL=\($v)\" >> \($f)"
+          ]')
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Sync secrets to .env" \
+            --parameters "{\"commands\":$COMMANDS}" \
+            --query 'Command.CommandId' --output text)
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" || true
+
       - name: Deploy via SSM
         env:
           INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}

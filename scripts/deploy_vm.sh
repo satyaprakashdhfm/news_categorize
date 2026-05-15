@@ -6,7 +6,6 @@ BRANCH="${BRANCH:-main}"
 SERVICE_NAME="${SERVICE_NAME:-curio-backend}"
 WEB_ROOT="${WEB_ROOT:-/var/www/curio}"
 DB_URL="${DB_URL:-}"
-REDDIT_PROXY_URL="${REDDIT_PROXY_URL:-}"
 
 echo "[deploy] App dir: ${APP_DIR}"
 echo "[deploy] Branch: ${BRANCH}"
@@ -61,17 +60,6 @@ sudo mkdir -p "${WEB_ROOT}"
 sudo rsync -a --delete "${APP_DIR}/frontend/dist/" "${WEB_ROOT}/"
 sudo chown -R www-data:www-data "${WEB_ROOT}"
 sudo chmod -R 755 "${WEB_ROOT}"
-
-echo "[deploy] Injecting env vars into .env (if provided)..."
-ENV_FILE="${APP_DIR}/backend/.env"
-if [[ -n "${REDDIT_PROXY_URL}" ]]; then
-  if grep -q "^REDDIT_PROXY_URL=" "${ENV_FILE}" 2>/dev/null; then
-    sed -i "s|^REDDIT_PROXY_URL=.*|REDDIT_PROXY_URL=${REDDIT_PROXY_URL}|" "${ENV_FILE}"
-  else
-    echo "REDDIT_PROXY_URL=${REDDIT_PROXY_URL}" >> "${ENV_FILE}"
-  fi
-  echo "[deploy] REDDIT_PROXY_URL updated."
-fi
 
 echo "[deploy] Restarting services..."
 sudo systemctl restart "${SERVICE_NAME}"
