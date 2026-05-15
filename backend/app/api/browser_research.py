@@ -1041,29 +1041,45 @@ async def run_live_browser_stream(
                     return events
 
                 # ── CALL 1: LLM plans full strategy + picks subreddits ────
+                # Always use Gemini for planning — Ollama (llama3.2:1b) can't follow
+                # complex JSON+rules instructions reliably.
                 yield emit("step", "LLM planning research strategy...")
                 FALLBACK_SUBS = _topic_aware_communities(query, 5)
                 plan: dict = {"subreddits": FALLBACK_SUBS, "youtube_query": query, "news_query": query}
-                if client:
+
+                _plan_client = client
+                if settings.USE_OLLAMA and settings.GOOGLE_API_KEY:
+                    try:
+                        from google import genai as _genai
+                        _plan_client = _genai.Client(api_key=settings.GOOGLE_API_KEY)
+                        _plan_model = settings.GEMINI_MODEL
+                    except Exception:
+                        _plan_client = client
+                        _plan_model = GEMINI_MODEL
+                else:
+                    _plan_model = GEMINI_MODEL
+
+                if _plan_client:
                     plan_prompt = (
                         f"Research query: \"{query}\"\n\n"
-                        "Return ONLY this JSON, no markdown, no explanation:\n"
-                        "{\n"
-                        '  "subreddits": ["sub1","sub2","sub3","sub4","sub5"],\n'
-                        '  "youtube_query": "short keyword search for YouTube",\n'
-                        '  "news_query": "short keyword search for news sites"\n'
-                        "}\n\n"
+                        "Return ONLY this JSON object, no markdown fences, no explanation:\n"
+                        "{\"subreddits\":[\"sub1\",\"sub2\",\"sub3\",\"sub4\",\"sub5\"],"
+                        "\"youtube_query\":\"keywords here\","
+                        "\"news_query\":\"keywords here\"}\n\n"
                         "Rules:\n"
-                        "- subreddits: 5 names whose PRIMARY topic matches the query. "
-                        "India defence/aviation → [IndiaDefence, aviation, aerospace, geopolitics, india]. "
-                        "Economics → [economics, investing, IndiaInvestments]. "
-                        "AI/tech → [MachineLearning, LocalLLaMA, technology]. "
-                        "NEVER use AskReddit, funny, pics, todayilearned, news, MachineLearning for non-AI queries.\n"
-                        "- youtube_query: 4-6 keywords, no filler words. Example for this query: 'India aircraft engine development Kaveri'\n"
-                        "- news_query: 4-6 keywords focused on the topic. Example: 'India indigenous jet engine update 2024'"
+                        "1. subreddits: exactly 5 subreddit names whose PRIMARY topic matches the query.\n"
+                        "   India defence/aviation/weapons → IndiaDefence, aviation, aerospace, geopolitics, india\n"
+                        "   AI/ML/LLM → MachineLearning, LocalLLaMA, artificial, technology, singularity\n"
+                        "   Economics/finance → economics, investing, IndiaInvestments, wallstreetbets, finance\n"
+                        "   Do NOT use MachineLearning, LocalLLaMA, or artificial for non-AI queries.\n"
+                        "   Do NOT use AskReddit, funny, pics, todayilearned, worldnews for topic queries.\n"
+                        "2. youtube_query: 3-5 specific keywords only, no filler words like 'best' or 'video'.\n"
+                        "3. news_query: 3-5 specific keywords only.\n"
+                        f"Example for this exact query → subreddits:[IndiaDefence,aviation,aerospace,geopolitics,india], "
+                        f"youtube_query:\"India Kaveri jet engine DRDO\", news_query:\"India indigenous aircraft engine update\""
                     )
                     try:
-                        resp = client.models.generate_content(model=GEMINI_MODEL, contents=plan_prompt)
+                        resp = _plan_client.models.generate_content(model=_plan_model, contents=plan_prompt)
                         _merge_usage(usage_totals, _usage_from_response(resp))
                         parsed = _extract_json(_extract_response_text(resp))
                         if isinstance(parsed, dict) and parsed.get("subreddits"):
