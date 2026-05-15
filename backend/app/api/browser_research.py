@@ -1105,9 +1105,11 @@ async def run_live_browser_stream(
                 yield emit("step", f"  → {len(reddit_blogs)} posts from Reddit search")
 
                 # Switch to a clean context (no proxy) for YouTube + News
+                yield emit("step", "Closing Reddit context, opening clean browser context...")
                 await _reddit_ctx.close()
                 _clean_ctx = await browser.new_context(**_ctx_kwargs)
                 page = await _clean_ctx.new_page()
+                yield emit("step", "Browser context ready for YouTube + News")
 
                 # ── PHASE 2: YouTube search ────────────────────────────────
                 youtube_blogs: list[BlogItem] = []
@@ -1116,6 +1118,7 @@ async def run_live_browser_stream(
                     yield emit("step", f"YouTube search (newest first): '{yt_query}'")
                     for ev in await nav(yt_url, t=40000):
                         yield ev
+                    yield emit("step", "YouTube page loaded, extracting videos...")
                     await asyncio.sleep(3)
 
                     videos_raw = await page.evaluate("""
@@ -1168,7 +1171,7 @@ async def run_live_browser_stream(
                         yield emit("step", f"  → {len(youtube_blogs)} YouTube videos summarized")
                 except Exception as _yt_err:
                     logger.warning(f"[BROWSER] YouTube phase failed: {_yt_err}")
-                    yield emit("step", f"  → YouTube unavailable ({type(_yt_err).__name__}), skipping")
+                    yield emit("step", f"  → YouTube failed ({type(_yt_err).__name__}: {str(_yt_err)[:120]})")
 
                 # ── PHASE 3: News via Bing News ───────────────────────────────
                 news_blogs: list[BlogItem] = []
@@ -1177,6 +1180,7 @@ async def run_live_browser_stream(
                     yield emit("step", f"Bing News (past week): '{news_query}'")
                     for ev in await nav(bing_news_url, t=30000):
                         yield ev
+                    yield emit("step", "Bing News page loaded, extracting articles...")
 
                     news_raw = await page.evaluate("""
                         () => {
@@ -1210,7 +1214,7 @@ async def run_live_browser_stream(
                         news_blogs = list(await asyncio.gather(*[summarize_news(a) for a in news_raw]))
                 except Exception as _bing_err:
                     logger.warning(f"[BROWSER] Bing News phase failed: {_bing_err}")
-                    yield emit("step", f"  → Bing News unavailable ({type(_bing_err).__name__}), skipping")
+                    yield emit("step", f"  → Bing News failed ({type(_bing_err).__name__}: {str(_bing_err)[:120]})")
 
                 # ── PHASE 3b: Google News RSS ──────────────────────────────
                 try:
@@ -1245,11 +1249,12 @@ async def run_live_browser_stream(
 
                 yield emit("step", f"  → {len(news_blogs)} total news articles (Bing + Google)")
 
+                yield emit("step", f"Closing browser... (reddit={len(reddit_blogs)}, yt={len(youtube_blogs)}, news={len(news_blogs)})")
                 await browser.close()
 
                 # ── Combine + relevance filter ─────────────────────────────
                 all_blogs: list[BlogItem] = reddit_blogs + youtube_blogs + news_blogs
-                yield emit("step", f"Total collected: {len(all_blogs)} items. Running relevance scoring...")
+                yield emit("step", f"Total collected: {len(all_blogs)} items. Saving to database...")
                 blogs, rel_usage = await _filter_by_relevance(
                     blogs=all_blogs, query=query, threshold=0.0, client=client
                 )

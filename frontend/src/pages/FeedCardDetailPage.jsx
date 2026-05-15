@@ -180,7 +180,7 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
         await loadItems();
       }
     } catch (e) {
-      if (e.name !== 'AbortError') { setRerunStatus('error'); setRerunLog(['Research failed. Try again.']); }
+      if (e.name !== 'AbortError') { setRerunStatus('error'); setRerunLog((p) => [...p, `Stream crashed: ${e.message || e}`]); }
       else { setRerunStatus('idle'); setRerunLog([]); }
     }
   };
