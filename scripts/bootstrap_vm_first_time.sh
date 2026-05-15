@@ -111,6 +111,9 @@ SHOW_DB_LOGS=false
 # FastAPI
 API_HOST=127.0.0.1
 API_PORT=8000
+
+# Webshare residential proxy for Reddit (format: http://user:pass@host:port)
+REDDIT_PROXY_URL=
 EOF
 fi
 
