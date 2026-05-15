@@ -262,6 +262,40 @@ async def _fetch_rss(sub_code: str, domain_code: str) -> list[dict]:
         return []
 
 
+async def _ai_filter_items(items: list[dict], topic: str) -> list[dict]:
+    """One LLM call — sends only titles, returns items the model considers relevant."""
+    import re as _re
+    if not items:
+        return items
+    try:
+        from app.core.ollama_client import get_llm_client, get_active_model
+        _client = get_llm_client()
+        _model = get_active_model()
+        lines = "\n".join(f"{i+1}. {it.get('title','')[:120]}" for i, it in enumerate(items))
+        prompt = (
+            f'Topic: "{topic}"\n\n'
+            f'For each item, answer YES if directly about this topic, NO if not.\n'
+            f'Reply ONLY with: 1:YES 2:NO 3:YES (number colon YES or NO for every item)\n\n'
+            f'{lines}'
+        )
+        resp = await asyncio.to_thread(_client.models.generate_content, model=_model, contents=prompt)
+        text = (resp.text or "")
+        pairs = _re.findall(r'(\d+)\s*[:.\-]\s*(YES|NO|yes|no|Yes|No)', text)
+        if pairs:
+            keep_nums = {int(n) for n, v in pairs if v.upper() == "YES"}
+        else:
+            keep_nums = {int(n) for n in _re.findall(r'\b(\d+)\b', text)
+                         if 1 <= int(n) <= len(items)}
+        if keep_nums:
+            kept = [it for i, it in enumerate(items) if (i + 1) in keep_nums]
+            if len(kept) >= max(2, len(items) * 0.25):
+                logger.info(f"[CRON] AI filter kept {len(kept)}/{len(items)} for '{topic[:60]}'")
+                return kept
+    except Exception as _e:
+        logger.warning(f"[CRON] AI filter failed: {_e}")
+    return items
+
+
 async def _search_for_subdomain(sub_code: str) -> list[dict]:
     cfg = SUBDOMAIN_CONFIG.get(sub_code)
     if not cfg:
@@ -285,6 +319,11 @@ async def _search_for_subdomain(sub_code: str) -> list[dict]:
             if url and url not in seen:
                 seen.add(url)
                 unique.append(item)
+
+    # AI relevance filter — one call, titles only, drops off-topic items
+    if unique and cfg.get("queries"):
+        unique = await _ai_filter_items(unique, cfg["queries"][0])
+
     return unique
 
 
