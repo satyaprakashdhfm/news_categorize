@@ -126,24 +126,38 @@ html.dark {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   text-decoration: none;
   color: var(--fg-1);
 }
 .brand__mark {
   color: var(--accent);
   display: flex;
+  flex-shrink: 0;
+}
+.brand__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 .brand__name {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 18px;
-  letter-spacing: -0.02em;
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  background: linear-gradient(120deg, var(--fg-1) 40%, var(--accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 .brand__tag {
-  font-size: var(--t-micro);
-  color: var(--fg-3);
-  margin-left: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-4);
+  line-height: 1;
 }
 .topbar__nav {
   display: flex;
@@ -376,6 +390,21 @@ html.dark {
 @keyframes pulse-ring {
   0% { transform: scale(0.8); opacity: 0.6; }
   100% { transform: scale(2); opacity: 0; }
+}
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+.shimmer {
+  border-radius: var(--r-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-2) 25%,
+    var(--bg-3, rgba(255,255,255,0.06)) 50%,
+    var(--bg-2) 75%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
 }
 
 /* ─── Filter bar ─── */

@@ -21,6 +21,30 @@ const SOURCE_ICONS = {
   youtube: '▶️',
 };
 
+function TrendingShimmer() {
+  const rows = [5, 3, 4, 2];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '4px 0' }}>
+      {rows.map((count, i) => (
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Domain header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="shimmer" style={{ width: 8, height: 8, borderRadius: '50%' }} />
+            <div className="shimmer" style={{ width: `${60 + i * 20}px`, height: 13 }} />
+          </div>
+          {/* Subdomain rows */}
+          {Array.from({ length: count }).map((_, j) => (
+            <div key={j} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16 }}>
+              <div className="shimmer" style={{ width: `${80 + (j * 17) % 60}px`, height: 11 }} />
+              <div className="shimmer" style={{ width: 16, height: 11 }} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TrendingSidebar({ trending, navigate }) {
   const [openIds, setOpenIds] = useState(new Set(['TEC', 'ECO']));
   const toggle = (id) => {
@@ -343,12 +367,12 @@ export default function HomePage({ isDark, toggleDark }) {
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 9 L5 6 L7 8 L10 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 Trending
               </span>
-              {trendingLoading && (
-                <div style={{ width: 12, height: 12, border: '1.5px solid var(--fg-3)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-              )}
             </div>
             <div className="sidebar__scroll">
-              <TrendingSidebar trending={trending} navigate={navigate} />
+              {trendingLoading && Object.keys(trending).length === 0
+                ? <TrendingShimmer />
+                : <TrendingSidebar trending={trending} navigate={navigate} />
+              }
             </div>
             <div className="sidebar__foot">
               <span className="meta">5 domains</span>
