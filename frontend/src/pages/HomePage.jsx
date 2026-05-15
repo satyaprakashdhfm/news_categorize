@@ -48,12 +48,9 @@ function TrendingShimmer() {
 function UserStatsWidget({ stats }) {
   const total = stats?.total ?? null;
   const today = stats?.today ?? 0;
-  const daily = stats?.daily ?? [];
-
-  const maxVal = Math.max(...daily, 1);
 
   return (
-    <div className="metric" style={{ minWidth: 120, position: 'relative' }}>
+    <div className="metric">
       <span className="eyebrow" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
           <circle cx="6" cy="4" r="2" stroke="currentColor" strokeWidth="1.3"/>
@@ -61,7 +58,7 @@ function UserStatsWidget({ stats }) {
         </svg>
         Members
       </span>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span className="metric__val">
           {total === null ? '—' : total.toLocaleString()}
         </span>
@@ -71,32 +68,12 @@ function UserStatsWidget({ stats }) {
             color: '#4cba6e',
             background: 'rgba(76,186,110,0.12)',
             border: '1px solid rgba(76,186,110,0.25)',
-            borderRadius: 4, padding: '1px 5px',
-            marginBottom: 2, flexShrink: 0,
+            borderRadius: 4, padding: '1px 5px', flexShrink: 0,
           }}>
             +{today} today
           </span>
         )}
       </div>
-      {/* 7-day sparkline */}
-      {daily.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 18, marginTop: 4 }}>
-          {daily.map((v, i) => (
-            <div
-              key={i}
-              title={`${v} joined`}
-              style={{
-                flex: 1,
-                height: `${Math.max(2, Math.round((v / maxVal) * 18))}px`,
-                borderRadius: 2,
-                background: i === daily.length - 1 ? 'var(--accent)' : 'var(--line-1)',
-                transition: 'height 0.3s',
-              }}
-            />
-          ))}
-        </div>
-      )}
-      <span className="eyebrow" style={{ marginTop: 2, display: 'block' }}>7-day growth</span>
     </div>
   );
 }
