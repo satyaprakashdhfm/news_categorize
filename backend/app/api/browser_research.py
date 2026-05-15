@@ -1092,6 +1092,7 @@ async def run_live_browser_stream(
                 subreddits: list[str] = subreddit_plan[:5]
 
                 unique_subs = subreddit_plan
+                sem = asyncio.Semaphore(5)
 
                 # ── PHASE 1: Reddit global search (query-first, no subreddit picking) ──
                 # Searching all of Reddit by query is more accurate than picking subreddits
