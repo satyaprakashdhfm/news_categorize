@@ -442,15 +442,21 @@ def attach_run(
     current_user: User | None = Depends(get_optional_user),
 ):
     def _stamp_run(run_id: str, card_id: str) -> None:
-        """Back-fill card_id on the run row using raw SQL (column added by migration_v4)."""
+        """Back-fill card_id on the run row using raw SQL (column added by migration_v4).
+        Uses SAVEPOINT so a failure doesn't roll back the caller's pending changes."""
+        from sqlalchemy import text
         try:
-            from sqlalchemy import text
+            db.execute(text("SAVEPOINT stamp_run"))
             db.execute(
                 text("UPDATE browser_research_runs SET card_id = :cid WHERE run_id = :rid AND (card_id IS NULL OR card_id = '')"),
                 {"cid": card_id, "rid": run_id},
             )
+            db.execute(text("RELEASE SAVEPOINT stamp_run"))
         except Exception:
-            db.rollback()  # reset broken session state so the caller's commit() still works
+            try:
+                db.execute(text("ROLLBACK TO SAVEPOINT stamp_run"))
+            except Exception:
+                pass
 
     # Priority: if caller knows the exact card to update, skip all matching logic
     if payload.card_id:
