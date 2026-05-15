@@ -518,8 +518,11 @@ async def _fetch_reddit_posts_for_community(
     proxy_label = "proxy" if _proxy else "no-proxy"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
-    short_query = " ".join(query.split()[:4])
+    # Use meaningful keywords (strip stop words) so subreddit search gets real terms
+    meaningful_terms = _tokenize_meaningful(query)
+    short_query = " ".join(list(meaningful_terms)[:6]) if meaningful_terms else " ".join(query.split()[:4])
     diag: list[str] = []
+    used_hot_fallback = False
 
     posts_data: list[dict] = []
     async with aiohttp.ClientSession(headers=headers) as session:
@@ -546,6 +549,7 @@ async def _fetch_reddit_posts_for_community(
 
         # ── Fallback: subreddit hot posts if search empty ──────────────
         if not posts_data:
+            used_hot_fallback = True
             try:
                 hot_url = f"https://www.reddit.com/r/{community}/hot.json"
                 async with session.get(
@@ -570,6 +574,14 @@ async def _fetch_reddit_posts_for_community(
     if not posts_data:
         logger.warning(f"[REDDIT] r/{community} — 0 posts. Diagnostics: {diag_str}")
         return [], _empty_usage(), diag_str
+
+    # When we fell back to hot posts (not a topic search), keyword-filter before summarising
+    # so we don't spend LLM calls on off-topic posts
+    if used_hot_fallback and meaningful_terms:
+        posts_data = [
+            d for d in posts_data
+            if meaningful_terms.intersection(_tokenize_meaningful(d.get("title", "") + " " + (d.get("selftext") or "")))
+        ]
 
     usage_totals = _empty_usage()
     posts = []
