@@ -1153,36 +1153,47 @@ async def run_live_browser_stream(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 )
 
-                # Extract meaningful keywords for YouTube / News search
-                yield emit("step", "Extracting keywords from query...")
-                _kw = list(_tokenize_meaningful(query))
-                _search_str = " ".join(_kw[:6]) if _kw else query
+                # Build search string: use the raw query but strip leading question
+                # phrases ("what is", "how do", "tell me about") that add no search value.
+                # Keep all intent words ("updates", "latest", "own", etc.) intact.
+                yield emit("step", "Building search queries...")
+                import re as _re2
+                _cleaned = query.strip().rstrip("?").strip()
+                _cleaned = _re2.sub(
+                    r'^(what (is|are|was|were|will|would|about)|how (do|does|did|can|to)|'
+                    r'why (is|are|did|does)|where (is|are)|when (did|is|will)|'
+                    r'tell me about|give me|show me|find me|search for)\s+',
+                    '', _cleaned, flags=_re2.IGNORECASE,
+                )
+                _search_str = " ".join(_cleaned.split()[:12])  # cap at 12 words
+
                 _news_intent = {"update", "updates", "news", "latest", "recent", "current", "today"}
                 _query_words = set(query.lower().split())
                 _has_news_intent = bool(_query_words & _news_intent)
-                _year = datetime.now().year
+                _now = datetime.now()
+                _year = _now.year
+                _month = _now.strftime("%B")  # e.g. "May"
 
-                # ── Per-source optimised queries ───────────────────────────
-                # YouTube: sort-by-date already set; add year to avoid tutorials.
-                # If user expressed news intent ("updates/latest") just add year;
-                # otherwise also add "news" so YouTube surfaces current events.
+                # ── Per-source queries ─────────────────────────────────────
+                # YouTube: add year (+ "news" if user didn't say it) so results
+                # are recent events, not old tutorials.
                 if _has_news_intent:
                     yt_query: str = f"{_search_str} {_year}"
                 else:
                     yt_query: str = f"{_search_str} news {_year}"
 
-                # Reddit: natural-language search works well; add year so recent
-                # threads rank higher than old evergreen discussion posts.
-                reddit_query: str = f"{_search_str} {_year}"
+                # Reddit: append "month year" so the most recent threads rise
+                # above old evergreen discussion posts.
+                reddit_query: str = f"{_search_str} {_month} {_year}"
 
-                # News (Bing RSS + Google RSS): already date-filtered at source
-                # (interval=3 / when:2d), so keep query clean — just keywords.
+                # News RSS (Bing/Google): sources already date-filter (when:2d /
+                # interval=3), so keep the raw query — no year needed.
                 news_query: str = _search_str
 
-                # Twitter: add year for recency, same rationale as Reddit.
-                twitter_query: str = f"{_search_str} {_year}"
+                # Twitter: "month year" keeps searches anchored to recent events.
+                twitter_query: str = f"{_search_str} {_month} {_year}"
 
-                yield emit("step", f"Keywords: {_search_str} | year: {_year}")
+                yield emit("step", f"Query: '{_search_str}' | {_month} {_year}")
 
                 sem = asyncio.Semaphore(5)
 
