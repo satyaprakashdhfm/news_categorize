@@ -97,6 +97,21 @@ TOPIC_COMMUNITY_MAP: dict[str, list[str]] = {
 GENERIC_COMMUNITY_FALLBACK = ["worldnews", "science", "technology", "askscience", "todayilearned"]
 
 
+def _parse_proxy(proxy_url: str):
+    """Return (proxy_str, proxy_auth) for aiohttp — splits credentials out of the URL
+    so aiohttp sends a proper Proxy-Authorization header (fixes 407 errors)."""
+    import aiohttp
+    if not proxy_url:
+        return None, None
+    from urllib.parse import urlparse
+    p = urlparse(proxy_url)
+    if p.username and p.password:
+        clean = f"{p.scheme}://{p.hostname}:{p.port}"
+        auth = aiohttp.BasicAuth(p.username, p.password)
+        return clean, auth
+    return proxy_url, None
+
+
 def _clean_sub_name(name: str) -> str:
     """Strip r/ prefix, spaces, and invalid characters from LLM-returned subreddit names."""
     s = str(name or "").strip()
@@ -499,7 +514,7 @@ async def _fetch_reddit_posts_for_community(
     import aiohttp
 
     safe_limit = max(1, min(int(posts_per_community or 1), 50))
-    _proxy = settings.REDDIT_PROXY_URL or None
+    _proxy, _proxy_auth = _parse_proxy(settings.REDDIT_PROXY_URL)
     proxy_label = "proxy" if _proxy else "no-proxy"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
@@ -515,7 +530,7 @@ async def _fetch_reddit_posts_for_community(
                 search_url,
                 params={"q": short_query, "restrict_sr": "1", "sort": "top", "t": "week", "limit": str(safe_limit * 2)},
                 timeout=aiohttp.ClientTimeout(total=15),
-                proxy=_proxy,
+                proxy=_proxy, proxy_auth=_proxy_auth,
             ) as resp:
                 diag.append(f"search HTTP {resp.status} ({proxy_label})")
                 if resp.status == 200:
@@ -537,7 +552,7 @@ async def _fetch_reddit_posts_for_community(
                     hot_url,
                     params={"limit": str(safe_limit * 3)},
                     timeout=aiohttp.ClientTimeout(total=15),
-                    proxy=_proxy,
+                    proxy=_proxy, proxy_auth=_proxy_auth,
                 ) as resp:
                     diag.append(f"hot HTTP {resp.status} ({proxy_label})")
                     if resp.status == 200:
@@ -592,7 +607,7 @@ async def _fetch_reddit_global_search(
     """Search all of Reddit by query — relevant for any topic, no subreddit selection needed."""
     import aiohttp
     safe_limit = min(max(limit, 1), 25)
-    _proxy = settings.REDDIT_PROXY_URL or None
+    _proxy, _proxy_auth = _parse_proxy(settings.REDDIT_PROXY_URL or "")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     short_query = " ".join(query.split()[:6])
 
@@ -604,6 +619,7 @@ async def _fetch_reddit_global_search(
                 params={"q": short_query, "sort": "top", "t": "week", "limit": str(safe_limit * 2), "type": "link"},
                 timeout=aiohttp.ClientTimeout(total=20),
                 proxy=_proxy,
+                proxy_auth=_proxy_auth,
             ) as resp:
                 if resp.status == 200:
                     payload = await resp.json()
@@ -618,6 +634,7 @@ async def _fetch_reddit_global_search(
                     params={"q": short_query, "sort": "new", "t": "month", "limit": str(safe_limit * 2)},
                     timeout=aiohttp.ClientTimeout(total=20),
                     proxy=_proxy,
+                    proxy_auth=_proxy_auth,
                 ) as resp:
                     if resp.status == 200:
                         payload = await resp.json()
