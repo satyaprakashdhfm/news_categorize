@@ -138,6 +138,7 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
           try {
             const d = JSON.parse(line.slice(5).trim());
             if (d.type === 'step') setRerunLog((p) => [...p, d.payload].slice(-40));
+            if (d.type === 'error') setRerunLog((p) => [...p, `ERROR: ${d.payload}`].slice(-40));
             if (d.type === 'result' && d.payload?.run_id) runId = d.payload.run_id;
           } catch { /* skip malformed */ }
         }

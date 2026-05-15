@@ -1110,108 +1110,107 @@ async def run_live_browser_stream(
                 page = await _clean_ctx.new_page()
 
                 # ── PHASE 2: YouTube search ────────────────────────────────
-                # sp=CAI%3D = sort by upload date newest first
-                yt_url = f"https://www.youtube.com/results?search_query={quote_plus(yt_query)}&sp=CAI%3D"
-                yield emit("step", f"YouTube search (newest first): '{yt_query}'")
-                for ev in await nav(yt_url, t=40000):
-                    yield ev
-                await asyncio.sleep(4)
-                yield emit("screenshot", await snap())
-
-                videos_raw = await page.evaluate("""
-                    () => {
-                        const RECENT_PATTERNS = [
-                            /\\d+ (second|minute|hour|day|week)s? ago/i,
-                            /\\d+ (month)s? ago/i,
-                            /streamed \\d+/i,
-                        ];
-                        const OLD_PATTERNS = [
-                            /\\d+ years? ago/i,
-                            /[2-9] months? ago/i,
-                        ];
-                        const items = [];
-                        document.querySelectorAll('ytd-video-renderer').forEach(el => {
-                            const titleEl = el.querySelector('a#video-title');
-                            const channelEl = el.querySelector('ytd-channel-name a, #channel-name a');
-                            const spans = el.querySelectorAll('#metadata-line span');
-                            if (titleEl) {
-                                const href = titleEl.getAttribute('href') || '';
-                                const title = (titleEl.getAttribute('title') || titleEl.textContent || '').trim();
-                                const metaText = [...spans].map(s=>s.textContent.trim()).join(' | ');
-                                // Skip clearly old videos (2+ months or years)
-                                if (OLD_PATTERNS.some(p => p.test(metaText))) return;
-                                if (title) items.push({
-                                    title,
-                                    url: href.startsWith('http') ? href : 'https://www.youtube.com' + href,
-                                    channel: channelEl?.textContent.trim() || '',
-                                    description: el.querySelector('#description-text')?.textContent.trim() || '',
-                                    meta: metaText,
-                                    isRecent: RECENT_PATTERNS.some(p => p.test(metaText)),
-                                });
-                            }
-                        });
-                        // Sort: recent-flagged first, then all others
-                        items.sort((a, b) => (b.isRecent ? 1 : 0) - (a.isRecent ? 1 : 0));
-                        return items.filter(v => v.title && v.url.includes('watch')).slice(0, 12);
-                    }
-                """)
-                yield emit("step", f"  → {len(videos_raw)} YouTube videos found")
-
                 youtube_blogs: list[BlogItem] = []
-                if videos_raw:
-                    yield emit("step", f"Summarizing {len(videos_raw)} YouTube videos with LLM...")
-                    async def summarize_video(v: dict) -> BlogItem:
-                        async with sem:
-                            body = f"{v.get('description','')} {v.get('meta','')}".strip()
-                            summary, u = await asyncio.to_thread(_summarize_text, v["title"], body, _sum_client)
-                            _merge_usage(usage_totals, u)
-                            return BlogItem(source="youtube", title=v["title"], summary=summary,
-                                            url=v["url"], channel=v.get("channel",""))
-                    youtube_blogs = list(await asyncio.gather(*[summarize_video(v) for v in videos_raw]))
-                    yield emit("step", f"  → {len(youtube_blogs)} YouTube videos summarized")
+                try:
+                    yt_url = f"https://www.youtube.com/results?search_query={quote_plus(yt_query)}&sp=CAI%3D"
+                    yield emit("step", f"YouTube search (newest first): '{yt_query}'")
+                    for ev in await nav(yt_url, t=40000):
+                        yield ev
+                    await asyncio.sleep(3)
 
-                # ── PHASE 3: News via Bing News (reliable, scrapeable) ────────
-                # Bing News has clean DOM, no CAPTCHA for headless, past week filter
-                bing_news_url = f"https://www.bing.com/news/search?q={quote_plus(news_query)}&qft=interval%3d%228%22&form=PTFTNR"
-                yield emit("step", f"Bing News (past week): '{news_query}'")
-                for ev in await nav(bing_news_url, t=30000):
-                    yield ev
+                    videos_raw = await page.evaluate("""
+                        () => {
+                            const RECENT_PATTERNS = [
+                                /\\d+ (second|minute|hour|day|week)s? ago/i,
+                                /\\d+ (month)s? ago/i,
+                                /streamed \\d+/i,
+                            ];
+                            const OLD_PATTERNS = [
+                                /\\d+ years? ago/i,
+                                /[2-9] months? ago/i,
+                            ];
+                            const items = [];
+                            document.querySelectorAll('ytd-video-renderer').forEach(el => {
+                                const titleEl = el.querySelector('a#video-title');
+                                const channelEl = el.querySelector('ytd-channel-name a, #channel-name a');
+                                const spans = el.querySelectorAll('#metadata-line span');
+                                if (titleEl) {
+                                    const href = titleEl.getAttribute('href') || '';
+                                    const title = (titleEl.getAttribute('title') || titleEl.textContent || '').trim();
+                                    const metaText = [...spans].map(s=>s.textContent.trim()).join(' | ');
+                                    if (OLD_PATTERNS.some(p => p.test(metaText))) return;
+                                    if (title) items.push({
+                                        title,
+                                        url: href.startsWith('http') ? href : 'https://www.youtube.com' + href,
+                                        channel: channelEl?.textContent.trim() || '',
+                                        description: el.querySelector('#description-text')?.textContent.trim() || '',
+                                        meta: metaText,
+                                        isRecent: RECENT_PATTERNS.some(p => p.test(metaText)),
+                                    });
+                                }
+                            });
+                            items.sort((a, b) => (b.isRecent ? 1 : 0) - (a.isRecent ? 1 : 0));
+                            return items.filter(v => v.title && v.url.includes('watch')).slice(0, 12);
+                        }
+                    """)
+                    yield emit("step", f"  → {len(videos_raw)} YouTube videos found")
 
-                news_raw = await page.evaluate("""
-                    () => {
-                        const seen = new Set();
-                        const items = [];
-                        document.querySelectorAll('.news-card, .newscard, article, .news-card-body').forEach(card => {
-                            const a = card.querySelector('a[href]');
-                            const titleEl = card.querySelector('.title, h2, h3, .news-card-title a');
-                            const snippetEl = card.querySelector('.snippet, .news-card-description, p');
-                            const title = (titleEl?.textContent || a?.textContent || '').trim();
-                            const url = a?.href || '';
-                            if (title && title.length > 15 && url.startsWith('http') && !seen.has(url)
-                                && !url.includes('bing.com') && !url.includes('microsoft.com')) {
-                                seen.add(url);
-                                items.push({
-                                    title,
-                                    url,
-                                    snippet: snippetEl?.textContent.trim().slice(0, 300) || ''
-                                });
-                            }
-                        });
-                        return items.slice(0, 12);
-                    }
-                """)
+                    if videos_raw:
+                        yield emit("step", f"Summarizing {len(videos_raw)} YouTube videos with LLM...")
+                        async def summarize_video(v: dict) -> BlogItem:
+                            async with sem:
+                                body = f"{v.get('description','')} {v.get('meta','')}".strip()
+                                summary, u = await asyncio.to_thread(_summarize_text, v["title"], body, _sum_client)
+                                _merge_usage(usage_totals, u)
+                                return BlogItem(source="youtube", title=v["title"], summary=summary,
+                                                url=v["url"], channel=v.get("channel",""))
+                        youtube_blogs = list(await asyncio.gather(*[summarize_video(v) for v in videos_raw]))
+                        yield emit("step", f"  → {len(youtube_blogs)} YouTube videos summarized")
+                except Exception as _yt_err:
+                    logger.warning(f"[BROWSER] YouTube phase failed: {_yt_err}")
+                    yield emit("step", f"  → YouTube unavailable ({type(_yt_err).__name__}), skipping")
 
+                # ── PHASE 3: News via Bing News ───────────────────────────────
                 news_blogs: list[BlogItem] = []
-                if news_raw:
-                    yield emit("step", f"  → {len(news_raw)} Bing news articles found, summarizing...")
-                    async def summarize_news(a: dict) -> BlogItem:
-                        async with sem:
-                            summary, u = await asyncio.to_thread(
-                                _summarize_text, a["title"], a.get("snippet", ""), _sum_client
-                            )
-                            _merge_usage(usage_totals, u)
-                            return BlogItem(source="news", title=a["title"], summary=summary, url=a["url"])
-                    news_blogs = list(await asyncio.gather(*[summarize_news(a) for a in news_raw]))
+                try:
+                    bing_news_url = f"https://www.bing.com/news/search?q={quote_plus(news_query)}&qft=interval%3d%228%22&form=PTFTNR"
+                    yield emit("step", f"Bing News (past week): '{news_query}'")
+                    for ev in await nav(bing_news_url, t=30000):
+                        yield ev
+
+                    news_raw = await page.evaluate("""
+                        () => {
+                            const seen = new Set();
+                            const items = [];
+                            document.querySelectorAll('.news-card, .newscard, article, .news-card-body').forEach(card => {
+                                const a = card.querySelector('a[href]');
+                                const titleEl = card.querySelector('.title, h2, h3, .news-card-title a');
+                                const snippetEl = card.querySelector('.snippet, .news-card-description, p');
+                                const title = (titleEl?.textContent || a?.textContent || '').trim();
+                                const url = a?.href || '';
+                                if (title && title.length > 15 && url.startsWith('http') && !seen.has(url)
+                                    && !url.includes('bing.com') && !url.includes('microsoft.com')) {
+                                    seen.add(url);
+                                    items.push({ title, url, snippet: snippetEl?.textContent.trim().slice(0, 300) || '' });
+                                }
+                            });
+                            return items.slice(0, 12);
+                        }
+                    """)
+
+                    if news_raw:
+                        yield emit("step", f"  → {len(news_raw)} Bing news articles found, summarizing...")
+                        async def summarize_news(a: dict) -> BlogItem:
+                            async with sem:
+                                summary, u = await asyncio.to_thread(
+                                    _summarize_text, a["title"], a.get("snippet", ""), _sum_client
+                                )
+                                _merge_usage(usage_totals, u)
+                                return BlogItem(source="news", title=a["title"], summary=summary, url=a["url"])
+                        news_blogs = list(await asyncio.gather(*[summarize_news(a) for a in news_raw]))
+                except Exception as _bing_err:
+                    logger.warning(f"[BROWSER] Bing News phase failed: {_bing_err}")
+                    yield emit("step", f"  → Bing News unavailable ({type(_bing_err).__name__}), skipping")
 
                 # ── PHASE 3b: Google News RSS ──────────────────────────────
                 try:
