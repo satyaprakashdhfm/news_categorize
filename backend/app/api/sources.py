@@ -42,29 +42,62 @@ DOMAIN_LABELS = {
 DOMAINS = list(DOMAIN_TREE.keys()) + [c for subs in DOMAIN_TREE.values() for c in subs]
 
 
+async def _fetch_page_meta(url: str) -> dict:
+    """Fetch a URL and extract og:description / meta description / title."""
+    import httpx, re as _re
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; CurioBot/1.0)"}
+    try:
+        async with httpx.AsyncClient(timeout=8, follow_redirects=True) as client:
+            r = await client.get(url, headers=headers)
+            html = r.text[:30000]  # only need the <head>
+        def _meta(prop, attr="content"):
+            m = _re.search(
+                rf'<meta[^>]+(?:property|name)=["\'](?:og:)?{prop}["\'][^>]+{attr}=["\']([^"\']+)["\']',
+                html, _re.IGNORECASE,
+            ) or _re.search(
+                rf'<meta[^>]+{attr}=["\']([^"\']+)["\'][^>]+(?:property|name)=["\'](?:og:)?{prop}["\']',
+                html, _re.IGNORECASE,
+            )
+            return m.group(1).strip() if m else ""
+        title_m = _re.search(r'<title[^>]*>([^<]+)</title>', html, _re.IGNORECASE)
+        return {
+            "title": title_m.group(1).strip() if title_m else "",
+            "description": _meta("description") or _meta("og:description") or "",
+        }
+    except Exception:
+        return {"title": "", "description": ""}
+
+
 async def _ai_detect_info(name: str, url: str) -> dict:
-    """Ask Ollama to suggest a domain code + one-line description for a source."""
+    """Fetch page meta then ask Ollama for domain code + clean one-line description."""
+    import re
+    # Step 1: get real page metadata
+    meta = await _fetch_page_meta(url)
+    page_desc = meta["description"]
+    page_title = meta["title"] or name
+
     try:
         from app.core.ollama_client import get_llm_client, get_active_model
         from app.api.browser_research import _extract_response_text
-        import re
         client = get_llm_client()
         model = get_active_model()
         codes_hint = (
-            "TEC=Technology, BUS=Business & Finance, POL=Politics & World, ECO=Economy, OTH=Science & Society\n"
-            "Sub-codes (prefer these when specific):\n"
-            "SAI=Software & AI, LLM=LLMs & Generative AI, AGT=AI Agents, SEC=Cybersecurity, DAT=Data Science,\n"
-            "DEF=Defence Technology, BIO=Biotech & Genomics, SPC=Space, ROB=Robotics, HRD=Hardware & Chips,\n"
-            "SCA=Startups & VC, FIN=FinTech, INV=Investing, TRD=Trade & Economy,\n"
-            "GEO=Geopolitics, DIP=Diplomacy & Security, EXE=Government,\n"
-            "ENE=Energy & Resources, CLM=Climate & Environment,\n"
-            "HEA=Health & Medicine, SCI=General Science, EDU=Education, GAM=Gaming & Media"
+            "SAI=Software & AI, LLM=LLMs & Generative AI, AGT=AI Agents, SEC=Cybersecurity, DAT=Data Science, "
+            "DEF=Defence Technology, BIO=Biotech & Genomics, SPC=Space, ROB=Robotics, HRD=Hardware & Chips, "
+            "SCA=Startups & VC, FIN=FinTech, INV=Investing, TRD=Trade & Economy, "
+            "GEO=Geopolitics, DIP=Diplomacy & Security, EXE=Government, "
+            "ENE=Energy & Resources, CLM=Climate & Environment, "
+            "HEA=Health & Medicine, SCI=General Science, EDU=Education, GAM=Gaming & Media, "
+            "TEC=Technology (generic), BUS=Business (generic), POL=Politics (generic), "
+            "ECO=Economy (generic), OTH=Science & Society (generic)"
         )
+        context = f'Page title: "{page_title}"\nPage description: "{page_desc}"\nURL: {url}'
         prompt = (
-            f'Source name: "{name}"\nURL: {url}\n\n'
-            f'Domain codes:\n{codes_hint}\n\n'
-            f'1. DOMAIN: Choose the most specific code that fits (e.g. SAI not TEC for an AI blog).\n'
-            f'2. DESCRIPTION: One sentence (max 120 chars) describing what this source covers.\n\n'
+            f'{context}\n\n'
+            f'Domain codes: {codes_hint}\n\n'
+            f'1. DOMAIN: Most specific code that fits.\n'
+            f'2. DESCRIPTION: One crisp sentence (max 120 chars) describing what this source covers. '
+            f'Use the page description above as your primary source — rewrite it to be clear and concise.\n\n'
             f'Reply in exactly this format:\n'
             f'DOMAIN: SAI\n'
             f'DESCRIPTION: Weekly AI/ML digest by Andrew Ng covering research and industry trends.'
@@ -76,10 +109,11 @@ async def _ai_detect_info(name: str, url: str) -> dict:
         domain = domain_m.group(1).strip().upper() if domain_m else "TEC"
         if domain not in DOMAINS:
             domain = "TEC"
-        description = desc_m.group(1).strip()[:200] if desc_m else ""
+        description = desc_m.group(1).strip()[:200] if desc_m else page_desc[:200]
         return {"domain": domain, "description": description}
     except Exception:
-        return {"domain": "TEC", "description": ""}
+        # Fallback: return raw page description if AI fails
+        return {"domain": "TEC", "description": page_desc[:200]}
 
 
 @router.post("/detect-info")
