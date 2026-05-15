@@ -495,15 +495,16 @@ async def _fetch_reddit_posts_for_community(
     posts_per_community: int,
     client,
     trace_id: str = None,
-) -> tuple[list[BlogItem], dict[str, int]]:
+) -> tuple[list[BlogItem], dict[str, int], str]:
     import aiohttp
 
     safe_limit = max(1, min(int(posts_per_community or 1), 50))
     _proxy = settings.REDDIT_PROXY_URL or None
+    proxy_label = "proxy" if _proxy else "no-proxy"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
-    # Shorten query to 4 key words — Reddit search chokes on long phrases
     short_query = " ".join(query.split()[:4])
+    diag: list[str] = []
 
     posts_data: list[dict] = []
     async with aiohttp.ClientSession(headers=headers) as session:
@@ -516,11 +517,17 @@ async def _fetch_reddit_posts_for_community(
                 timeout=aiohttp.ClientTimeout(total=15),
                 proxy=_proxy,
             ) as resp:
+                diag.append(f"search HTTP {resp.status} ({proxy_label})")
                 if resp.status == 200:
                     payload = await resp.json()
                     posts_data = [n["data"] for n in ((payload.get("data") or {}).get("children") or []) if n.get("data")]
-        except Exception:
-            pass
+                    diag.append(f"search returned {len(posts_data)} posts")
+                else:
+                    body_preview = (await resp.text())[:120]
+                    logger.warning(f"[REDDIT] r/{community} search HTTP {resp.status} ({proxy_label}): {body_preview}")
+        except Exception as exc:
+            diag.append(f"search error: {exc}")
+            logger.warning(f"[REDDIT] r/{community} search exception ({proxy_label}): {exc}")
 
         # ── Fallback: subreddit hot posts if search empty ──────────────
         if not posts_data:
@@ -532,14 +539,22 @@ async def _fetch_reddit_posts_for_community(
                     timeout=aiohttp.ClientTimeout(total=15),
                     proxy=_proxy,
                 ) as resp:
+                    diag.append(f"hot HTTP {resp.status} ({proxy_label})")
                     if resp.status == 200:
                         payload = await resp.json()
                         posts_data = [n["data"] for n in ((payload.get("data") or {}).get("children") or []) if n.get("data")]
-            except Exception:
-                pass
+                        diag.append(f"hot returned {len(posts_data)} posts")
+                    else:
+                        body_preview = (await resp.text())[:120]
+                        logger.warning(f"[REDDIT] r/{community} hot HTTP {resp.status} ({proxy_label}): {body_preview}")
+            except Exception as exc:
+                diag.append(f"hot error: {exc}")
+                logger.warning(f"[REDDIT] r/{community} hot exception ({proxy_label}): {exc}")
 
+    diag_str = " | ".join(diag)
     if not posts_data:
-        return [], _empty_usage()
+        logger.warning(f"[REDDIT] r/{community} — 0 posts. Diagnostics: {diag_str}")
+        return [], _empty_usage(), diag_str
 
     usage_totals = _empty_usage()
     posts = []
@@ -565,7 +580,7 @@ async def _fetch_reddit_posts_for_community(
         )
 
     posts.sort(key=lambda p: ((p.score or 0), (p.comments or 0)), reverse=True)
-    return posts[:safe_limit], usage_totals
+    return posts[:safe_limit], usage_totals, ""
 
 
 async def _fetch_reddit_global_search(
@@ -677,8 +692,8 @@ async def run_browser_research(request: BrowserResearchRequest, db: Session = De
         for c in selected_communities
     ]
     reddit_batches = await asyncio.gather(*reddit_tasks)
-    reddit_blogs = [item for batch, _ in reddit_batches for item in batch]
-    for _, usage_counts in reddit_batches:
+    reddit_blogs = [item for batch, _, _d in reddit_batches for item in batch]
+    for _, usage_counts, _ in reddit_batches:
         _merge_usage(usage_totals, usage_counts)
 
     yt_payload = await youtube_scraping_service.scrape_channels(
@@ -818,7 +833,7 @@ async def run_browser_research_stream(request: BrowserResearchRequest, db: Sessi
             reddit_blogs = []
             for community in selected_communities:
                 yield emit("step", f"Fetching posts from r/{community}...")
-                posts, usage_counts = await _fetch_reddit_posts_for_community(
+                posts, usage_counts, _diag = await _fetch_reddit_posts_for_community(
                     community=community,
                     query=query,
                     posts_per_community=request.reddit_posts_per_community,
@@ -1081,12 +1096,13 @@ async def run_live_browser_stream(
                     yield emit("step", f"r/{sub} → fetching posts via Reddit API")
                     for ev in await nav(browser_url, t=25000):
                         yield ev
-                    posts, usage_counts = await _fetch_reddit_posts_for_community(
+                    posts, usage_counts, diag = await _fetch_reddit_posts_for_community(
                         community=sub, query=query, posts_per_community=6, client=_sum_client
                     )
                     _merge_usage(usage_totals, usage_counts)
                     reddit_blogs.extend(posts)
-                    yield emit("step", f"  → {len(posts)} posts from r/{sub}")
+                    status_hint = f" ({diag})" if diag and len(posts) == 0 else ""
+                    yield emit("step", f"  → {len(posts)} posts from r/{sub}{status_hint}")
 
                 yield emit("step", f"Reddit done: {len(reddit_blogs)} posts from {len(subreddits)} subreddits")
 
