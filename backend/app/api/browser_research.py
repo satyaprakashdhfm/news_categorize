@@ -1362,22 +1362,29 @@ def get_browser_research_history(
 
 @router.get("/card/{card_id}/items")
 def get_card_all_items(card_id: str, db: Session = Depends(get_db)):
-    """Return all items across all runs for a card, deduped by URL, newest runs first."""
-    runs = (
-        db.query(BrowserResearchRun)
-        .filter(BrowserResearchRun.card_id == card_id)
-        .order_by(BrowserResearchRun.generated_at.desc())
-        .all()
-    )
-    if not runs:
+    """Return all items across all runs for a card, deduped by URL, newest runs first.
+    Uses raw SQL for the card_id lookup so it degrades gracefully before migration_v4 runs."""
+    from sqlalchemy import text
+    try:
+        run_rows = db.execute(
+            text("SELECT run_id, generated_at FROM browser_research_runs WHERE card_id = :cid ORDER BY generated_at DESC"),
+            {"cid": card_id},
+        ).fetchall()
+    except Exception:
+        # Column doesn't exist yet (migration pending) — return empty so frontend falls back to getRun
+        return {"items": [], "total": 0, "run_count": 0}
+
+    if not run_rows:
         return {"items": [], "total": 0, "run_count": 0}
 
     seen_urls: set[str] = set()
     items_out = []
-    for run in runs:
+    for run_row in run_rows:
+        run_id = run_row[0]
+        run_date = run_row[1]
         rows = (
             db.query(BrowserResearchItem)
-            .filter(BrowserResearchItem.run_id == run.run_id)
+            .filter(BrowserResearchItem.run_id == run_id)
             .all()
         )
         for row in rows:
@@ -1396,11 +1403,11 @@ def get_card_all_items(card_id: str, db: Session = Depends(get_db)):
                 "score": row.score,
                 "comments": row.comments,
                 "published_at": row.published_at,
-                "run_id": run.run_id,
-                "run_date": run.generated_at.isoformat() if run.generated_at else None,
+                "run_id": run_id,
+                "run_date": run_date.isoformat() if run_date else None,
             })
 
-    return {"items": items_out, "total": len(items_out), "run_count": len(runs)}
+    return {"items": items_out, "total": len(items_out), "run_count": len(run_rows)}
 
 
 @router.get("/history/{run_id}", response_model=BrowserResearchResponse)

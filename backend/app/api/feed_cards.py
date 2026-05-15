@@ -442,10 +442,15 @@ def attach_run(
     current_user: User | None = Depends(get_optional_user),
 ):
     def _stamp_run(run_id: str, card_id: str) -> None:
-        """Back-fill card_id on the run row so we can query all runs for a card."""
-        run = db.query(BrowserResearchRun).filter(BrowserResearchRun.run_id == run_id).first()
-        if run and not run.card_id:
-            run.card_id = card_id
+        """Back-fill card_id on the run row using raw SQL (column added by migration_v4)."""
+        try:
+            from sqlalchemy import text
+            db.execute(
+                text("UPDATE browser_research_runs SET card_id = :cid WHERE run_id = :rid AND (card_id IS NULL OR card_id = '')"),
+                {"cid": card_id, "rid": run_id},
+            )
+        except Exception:
+            pass  # migration not yet applied — silently skip
 
     # Priority: if caller knows the exact card to update, skip all matching logic
     if payload.card_id:

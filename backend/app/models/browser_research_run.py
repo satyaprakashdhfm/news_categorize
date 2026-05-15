@@ -12,7 +12,6 @@ class BrowserResearchRun(Base):
 
     run_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     query = Column(String, nullable=False)
-    card_id = Column(String, nullable=True, index=True)
     selected_reddit_communities = Column(Text, nullable=False, default="[]")
     youtube_channels_used = Column(Text, nullable=False, default="[]")
     total_blogs = Column(Integer, nullable=False, default=0)
