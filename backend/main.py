@@ -26,6 +26,7 @@ from app.api import articles, scraping, custom_agents, custom_youtube, custom_re
 from app.api import auth, feed_cards, recommendations
 from app.api import hackernews, rss_feeds
 from app.api import stats
+from app.api import sources
 from app.core.database import Base, engine
 import app.models  # noqa: F401 - ensure models are registered before create_all
 from app.core.config import settings
@@ -74,6 +75,7 @@ app.include_router(recommendations.router)
 app.include_router(hackernews.router)
 app.include_router(rss_feeds.router)
 app.include_router(stats.router)
+app.include_router(sources.router)
 
 
 @app.on_event("startup")

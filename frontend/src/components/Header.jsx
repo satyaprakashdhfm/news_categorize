@@ -24,6 +24,7 @@ export default function Header({ isDark, toggleDark }) {
     : path.startsWith('/custom') ? 'custom'
     : path.startsWith('/llm-usage') ? 'usage'
     : path.startsWith('/help') ? 'help'
+    : path.startsWith('/sources') ? 'sources'
     : '';
 
   const handleLogout = () => {
@@ -74,6 +75,11 @@ export default function Header({ isDark, toggleDark }) {
         <Link to="/help" className={`navbtn ${activeTab === 'help' ? 'is-active' : ''}`}>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.4"/><path d="M5.5 5.5 Q5.5 3.5 7 3.5 Q8.5 3.5 8.5 5.5 Q8.5 6.5 7 7 V8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="7" cy="10" r="0.6" fill="currentColor"/></svg>
           <span className="hidden sm:inline">Help</span>
+        </Link>
+
+        <Link to="/sources" className={`navbtn ${activeTab === 'sources' ? 'is-active' : ''}`}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1" stroke="currentColor" strokeWidth="1.4"/><path d="M4 6h6M4 8.5h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+          <span className="hidden sm:inline">Sources</span>
         </Link>
 
         <div className="topbar__sep hidden sm:block" />
@@ -127,6 +133,7 @@ export default function Header({ isDark, toggleDark }) {
           <Link to="/custom" onClick={() => setMenuOpen(false)} className={`navbtn ${activeTab === 'custom' ? 'is-active' : ''}`}>Custom</Link>
           <Link to="/llm-usage" onClick={() => setMenuOpen(false)} className={`navbtn ${activeTab === 'usage' ? 'is-active' : ''}`}>LLM Usage</Link>
           <Link to="/help" onClick={() => setMenuOpen(false)} className={`navbtn ${activeTab === 'help' ? 'is-active' : ''}`}>Help</Link>
+          <Link to="/sources" onClick={() => setMenuOpen(false)} className={`navbtn ${activeTab === 'sources' ? 'is-active' : ''}`}>Sources</Link>
           <div style={{ height: 1, background: 'var(--line-1)', margin: '4px 0' }} />
           {isAuthenticated ? (
             <>

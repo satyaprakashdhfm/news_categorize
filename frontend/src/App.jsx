@@ -17,6 +17,7 @@ import LLMUsageDashboardPage from './pages/LLMUsageDashboardPage';
 import CountryPage from './pages/CountryPage';
 import HelpPage from './pages/HelpPage';
 import ProfilePage from './pages/ProfilePage';
+import SourcesPage from './pages/SourcesPage';
 
 function App() {
   const [isDark, setIsDark] = useDarkMode();
@@ -41,6 +42,7 @@ function App() {
         <Route path="/country/:countryCode" element={<CountryPage {...props} />} />
         <Route path="/help"          element={<HelpPage {...props} />} />
         <Route path="/profile"       element={<ProfilePage {...props} />} />
+        <Route path="/sources"       element={<SourcesPage {...props} />} />
       </Routes>
     </AuthProvider>
   );

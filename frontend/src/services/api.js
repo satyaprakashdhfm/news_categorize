@@ -97,6 +97,14 @@ export const statsApi = {
   getUsers: () => api.get('/stats/users').then((r) => r.data),
 };
 
+// ── Wall of Sources ───────────────────────────────────────────────────────────
+export const sourcesApi = {
+  list: (params = {}) => api.get('/sources', { params }).then((r) => r.data),
+  add: (data) => api.post('/sources', data).then((r) => r.data),
+  vote: (id, vote) => api.post(`/sources/${id}/vote`, { vote }).then((r) => r.data),
+  remove: (id) => api.delete(`/sources/${id}`).then((r) => r.data),
+};
+
 // ── RSS Feeds ─────────────────────────────────────────────────────────────────
 export const rssApi = {
   getForDomain: (domainCode, limitPerFeed = 6) =>
