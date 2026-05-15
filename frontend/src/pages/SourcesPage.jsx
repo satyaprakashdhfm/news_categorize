@@ -3,18 +3,32 @@ import { useAuth } from '@/context/AuthContext';
 import Header from '@/components/Header';
 import { sourcesApi } from '@/services/api';
 
-const DOMAINS = ['all', 'general', 'technology', 'defence', 'science', 'business', 'politics', 'health', 'environment', 'sports'];
+const DOMAINS = ['all', 'software-ai', 'technology', 'defence', 'science', 'business', 'politics', 'health', 'environment', 'sports', 'general'];
+
+const DOMAIN_LABELS = {
+  'software-ai': 'Software & AI',
+  technology:    'Technology',
+  defence:       'Defence',
+  science:       'Science',
+  business:      'Business',
+  politics:      'Politics',
+  health:        'Health',
+  environment:   'Environment',
+  sports:        'Sports',
+  general:       'General',
+};
 
 const DOMAIN_COLORS = {
-  technology:  { bg: 'rgba(59,130,246,0.12)',  color: '#3b82f6' },
-  defence:     { bg: 'rgba(239,68,68,0.12)',   color: '#ef4444' },
-  science:     { bg: 'rgba(16,185,129,0.12)',  color: '#10b981' },
-  business:    { bg: 'rgba(245,158,11,0.12)',  color: '#f59e0b' },
-  politics:    { bg: 'rgba(139,92,246,0.12)',  color: '#8b5cf6' },
-  health:      { bg: 'rgba(236,72,153,0.12)',  color: '#ec4899' },
-  environment: { bg: 'rgba(34,197,94,0.12)',   color: '#22c55e' },
-  sports:      { bg: 'rgba(249,115,22,0.12)',  color: '#f97316' },
-  general:     { bg: 'rgba(100,116,139,0.12)', color: '#64748b' },
+  'software-ai': { bg: 'rgba(99,102,241,0.12)',  color: '#6366f1' },
+  technology:    { bg: 'rgba(59,130,246,0.12)',   color: '#3b82f6' },
+  defence:       { bg: 'rgba(239,68,68,0.12)',    color: '#ef4444' },
+  science:       { bg: 'rgba(16,185,129,0.12)',   color: '#10b981' },
+  business:      { bg: 'rgba(245,158,11,0.12)',   color: '#f59e0b' },
+  politics:      { bg: 'rgba(139,92,246,0.12)',   color: '#8b5cf6' },
+  health:        { bg: 'rgba(236,72,153,0.12)',   color: '#ec4899' },
+  environment:   { bg: 'rgba(34,197,94,0.12)',    color: '#22c55e' },
+  sports:        { bg: 'rgba(249,115,22,0.12)',   color: '#f97316' },
+  general:       { bg: 'rgba(100,116,139,0.12)',  color: '#64748b' },
 };
 
 const TYPE_META = {
@@ -50,55 +64,76 @@ function getShortUrl(url) {
   }
 }
 
-function AddSourceModal({ onClose, onAdded }) {
-  const [form, setForm] = useState({ name: '', url: '', description: '', domain: 'general' });
-  const [detectedType, setDetectedType] = useState('web');
-  const [domainDetecting, setDomainDetecting] = useState(false);
-  const [domainAiSet, setDomainAiSet] = useState(false);
+function SourceFormModal({ onClose, onDone, existing }) {
+  const isEdit = !!existing;
+  const [form, setForm] = useState({
+    name: existing?.name || '',
+    url: existing?.url || '',
+    description: existing?.description || '',
+    domain: existing?.domain || 'general',
+  });
+  const [detectedType, setDetectedType] = useState(() => {
+    const u = (existing?.url || '').toLowerCase();
+    if (u.includes('youtube.com')) return 'youtube';
+    if (u.includes('twitter.com') || u.includes('x.com')) return 'twitter';
+    if (u.includes('reddit.com')) return 'reddit';
+    return 'web';
+  });
+  const [aiDetecting, setAiDetecting] = useState(false);
+  const [aiSet, setAiSet] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const detectTimer = useRef(null);
 
-  const triggerDomainDetect = (name, url) => {
+  const triggerAiDetect = (name, url) => {
     if (!name && !url) return;
     clearTimeout(detectTimer.current);
     detectTimer.current = setTimeout(async () => {
-      setDomainDetecting(true);
+      setAiDetecting(true);
       try {
-        const res = await sourcesApi.detectDomain(name, url);
-        setForm(f => ({ ...f, domain: res.domain }));
-        setDomainAiSet(true);
+        const res = await sourcesApi.detectInfo(name, url);
+        setForm(f => ({
+          ...f,
+          domain: res.domain || f.domain,
+          description: f.description || res.description || '',
+        }));
+        setAiSet(true);
       } catch { /* keep current */ }
-      finally { setDomainDetecting(false); }
-    }, 800);
+      finally { setAiDetecting(false); }
+    }, 900);
   };
 
   const handleNameChange = (val) => {
     setForm(f => ({ ...f, name: val }));
-    setDomainAiSet(false);
-    triggerDomainDetect(val, form.url);
+    setAiSet(false);
+    if (!isEdit) triggerAiDetect(val, form.url);
   };
 
   const handleUrlChange = (val) => {
     setForm(f => ({ ...f, url: val }));
-    setDomainAiSet(false);
+    setAiSet(false);
     const u = val.toLowerCase();
     if (u.includes('youtube.com') || u.includes('youtu.be')) setDetectedType('youtube');
     else if (u.includes('twitter.com') || u.includes('x.com')) setDetectedType('twitter');
     else if (u.includes('reddit.com')) setDetectedType('reddit');
     else setDetectedType('web');
-    triggerDomainDetect(form.name, val);
+    if (!isEdit) triggerAiDetect(form.name, val);
   };
 
   const submit = async () => {
     if (!form.name.trim() || !form.url.trim()) { setErr('Name and URL are required'); return; }
+    if (!form.description.trim()) { setErr('Description is required — help others know what this source covers'); return; }
     setSaving(true); setErr('');
     try {
-      await sourcesApi.add(form);
-      onAdded();
+      if (isEdit) {
+        await sourcesApi.edit(existing.id, form);
+      } else {
+        await sourcesApi.add(form);
+      }
+      onDone();
       onClose();
     } catch (e) {
-      setErr(e?.response?.data?.detail || 'Failed to add source');
+      setErr(e?.response?.data?.detail || 'Failed to save');
     } finally { setSaving(false); }
   };
 
@@ -112,52 +147,43 @@ function AddSourceModal({ onClose, onAdded }) {
     }} onClick={onClose}>
       <div style={{
         background: 'var(--bg-1)', border: '1px solid var(--line-1)',
-        borderRadius: 'var(--r-md)', padding: 28, width: 440, maxWidth: '95vw',
+        borderRadius: 'var(--r-md)', padding: 28, width: 480, maxWidth: '95vw',
+        maxHeight: '90vh', overflowY: 'auto',
       }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <span style={{ fontWeight: 700, fontSize: 15 }}>Add a Source</span>
+          <span style={{ fontWeight: 700, fontSize: 15 }}>{isEdit ? 'Edit Source' : 'Add a Source'}</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-3)', fontSize: 18 }}>×</button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Name */}
           <div>
             <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Name *</label>
-            <input
-              value={form.name}
-              onChange={e => handleNameChange(e.target.value)}
-              placeholder="e.g. Ars Technica, Wendover Productions"
-              style={{ width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-sm)', border: '1px solid var(--line-1)', background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, boxSizing: 'border-box' }}
-            />
+            <input value={form.name} onChange={e => handleNameChange(e.target.value)}
+              placeholder="e.g. The Batch — DeepLearning.AI"
+              style={{ width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-sm)', border: '1px solid var(--line-1)', background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, boxSizing: 'border-box' }} />
           </div>
 
+          {/* URL */}
           <div>
             <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>URL *</label>
-            <input
-              value={form.url}
-              onChange={e => handleUrlChange(e.target.value)}
+            <input value={form.url} onChange={e => handleUrlChange(e.target.value)}
               placeholder="https://..."
-              style={{ width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-sm)', border: '1px solid var(--line-1)', background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, boxSizing: 'border-box' }}
-            />
+              style={{ width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-sm)', border: '1px solid var(--line-1)', background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, boxSizing: 'border-box' }} />
             {form.url && (
-              <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ color: tm.color, display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
-                  {tm.icon} {tm.label}
-                </span>
-              </div>
+              <span style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: tm.color }}>
+                {tm.icon} {tm.label}
+              </span>
             )}
           </div>
 
-          {/* Domain — AI auto-detected, user can override */}
+          {/* Domain pills */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Domain</label>
-              {domainDetecting && (
-                <span style={{ fontSize: 10, color: 'var(--fg-4)' }}>AI detecting...</span>
-              )}
-              {domainAiSet && !domainDetecting && (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: domStyle.bg, color: domStyle.color }}>
-                  ✦ AI: {form.domain}
-                </span>
+              {aiDetecting && <span style={{ fontSize: 10, color: 'var(--fg-4)' }}>AI detecting...</span>}
+              {aiSet && !aiDetecting && (
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: domStyle.bg, color: domStyle.color }}>✦ AI suggested</span>
               )}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -165,43 +191,38 @@ function AddSourceModal({ onClose, onAdded }) {
                 const dc = DOMAIN_COLORS[d] || DOMAIN_COLORS.general;
                 const active = form.domain === d;
                 return (
-                  <button
-                    key={d}
-                    onClick={() => { setForm(f => ({ ...f, domain: d })); setDomainAiSet(false); }}
-                    style={{
-                      padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  <button key={d} onClick={() => { setForm(f => ({ ...f, domain: d })); setAiSet(false); }}
+                    style={{ padding: '4px 11px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer',
                       border: `1px solid ${active ? dc.color : 'var(--line-1)'}`,
                       background: active ? dc.bg : 'transparent',
-                      color: active ? dc.color : 'var(--fg-4)',
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    {d.charAt(0).toUpperCase() + d.slice(1)}
+                      color: active ? dc.color : 'var(--fg-4)', transition: 'all 0.15s' }}>
+                    {DOMAIN_LABELS[d] || d}
                   </button>
                 );
               })}
             </div>
           </div>
 
+          {/* Description — mandatory, AI pre-fills */}
           <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Description <span style={{ fontWeight: 400 }}>(optional)</span></label>
-            <textarea
-              value={form.description}
-              onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              placeholder="What makes this source good?"
-              rows={2}
-              style={{ width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-sm)', border: '1px solid var(--line-1)', background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Description *</label>
+              {aiDetecting && <span style={{ fontSize: 10, color: 'var(--fg-4)' }}>AI writing...</span>}
+              {aiSet && !aiDetecting && form.description && (
+                <span style={{ fontSize: 10, color: 'var(--fg-4)' }}>AI suggested — edit freely</span>
+              )}
+            </div>
+            <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              placeholder="What does this source cover? Who is it for?"
+              rows={3}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--r-sm)', border: `1px solid ${!form.description.trim() && err ? 'var(--signal-err)' : 'var(--line-1)'}`, background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
           </div>
 
           {err && <div style={{ color: 'var(--signal-err)', fontSize: 12 }}>{err}</div>}
 
-          <button
-            onClick={submit}
-            disabled={saving || domainDetecting}
-            style={{ padding: '9px 0', borderRadius: 'var(--r-sm)', background: 'var(--fg-1)', color: 'var(--bg-0)', fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer', opacity: (saving || domainDetecting) ? 0.6 : 1 }}
-          >
-            {saving ? 'Adding...' : 'Add Source'}
+          <button onClick={submit} disabled={saving || aiDetecting}
+            style={{ padding: '9px 0', borderRadius: 'var(--r-sm)', background: 'var(--fg-1)', color: 'var(--bg-0)', fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer', opacity: (saving || aiDetecting) ? 0.6 : 1 }}>
+            {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Source'}
           </button>
         </div>
       </div>
@@ -209,7 +230,7 @@ function AddSourceModal({ onClose, onAdded }) {
   );
 }
 
-function SourceCard({ src, onVote, isAuthenticated }) {
+function SourceCard({ src, onVote, isAuthenticated, onEdit }) {
   const domStyle = DOMAIN_COLORS[src.domain] || DOMAIN_COLORS.general;
   const tm = TYPE_META[src.source_type] || TYPE_META.web;
   const favicon = getFavicon(src.url);
@@ -302,9 +323,18 @@ function SourceCard({ src, onVote, isAuthenticated }) {
           </span>
         </div>
 
-        {src.submitted_by && (
-          <span style={{ fontSize: 10, color: 'var(--fg-4)' }}>by {src.submitted_by}</span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {src.submitted_by && (
+            <span style={{ fontSize: 10, color: 'var(--fg-4)' }}>by {src.submitted_by}</span>
+          )}
+          {src.is_mine && (
+            <button onClick={() => onEdit(src)}
+              title="Edit your source"
+              style={{ background: 'none', border: '1px solid var(--line-1)', borderRadius: 'var(--r-sm)', padding: '2px 8px', cursor: 'pointer', fontSize: 10, fontWeight: 600, color: 'var(--fg-3)' }}>
+              Edit
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -317,6 +347,7 @@ export default function SourcesPage({ isDark, toggleDark }) {
   const [domain, setDomain] = useState('all');
   const [sort, setSort] = useState('hot');
   const [showAdd, setShowAdd] = useState(false);
+  const [editSrc, setEditSrc] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -429,7 +460,7 @@ export default function SourcesPage({ isDark, toggleDark }) {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
             {sources.map(src => (
-              <SourceCard key={src.id} src={src} onVote={handleVote} isAuthenticated={isAuthenticated} />
+              <SourceCard key={src.id} src={src} onVote={handleVote} isAuthenticated={isAuthenticated} onEdit={setEditSrc} />
             ))}
           </div>
         )}
@@ -441,7 +472,8 @@ export default function SourcesPage({ isDark, toggleDark }) {
         )}
       </div>
 
-      {showAdd && <AddSourceModal onClose={() => setShowAdd(false)} onAdded={load} />}
+      {showAdd && <SourceFormModal onClose={() => setShowAdd(false)} onDone={load} />}
+      {editSrc && <SourceFormModal existing={editSrc} onClose={() => setEditSrc(null)} onDone={load} />}
     </div>
   );
 }

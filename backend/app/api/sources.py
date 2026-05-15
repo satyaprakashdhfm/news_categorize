@@ -10,37 +10,63 @@ from app.models.source import Source, SourceVote
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
-DOMAINS = ["general", "technology", "defence", "science", "business", "politics", "health", "environment", "sports"]
+DOMAINS = [
+    "general", "software-ai", "technology", "defence", "science",
+    "business", "politics", "health", "environment", "sports",
+]
+
+DOMAIN_LABELS = {
+    "software-ai": "Software & AI",
+    "technology": "Technology",
+    "defence": "Defence",
+    "science": "Science",
+    "business": "Business",
+    "politics": "Politics",
+    "health": "Health",
+    "environment": "Environment",
+    "sports": "Sports",
+    "general": "General",
+}
 
 
-async def _ai_detect_domain(name: str, url: str) -> str:
-    """Ask Ollama to classify a source into one of the known domains."""
+async def _ai_detect_info(name: str, url: str) -> dict:
+    """Ask Ollama to suggest domain + one-line description for a source."""
     try:
         from app.core.ollama_client import get_llm_client, get_active_model
         from app.api.browser_research import _extract_response_text
+        import re
         client = get_llm_client()
         model = get_active_model()
+        domains_str = ", ".join(DOMAINS)
         prompt = (
             f'Source name: "{name}"\nURL: {url}\n\n'
-            f'Which single domain does this news/media source belong to?\n'
-            f'Choose ONLY ONE from: technology, defence, science, business, politics, health, environment, sports, general\n'
-            f'Reply with ONLY the domain word, nothing else.'
+            f'1. DOMAIN: Which single domain fits best? Choose from: {domains_str}\n'
+            f'   Use "software-ai" for anything about AI, ML, LLMs, software engineering, or coding.\n'
+            f'2. DESCRIPTION: Write one sentence (max 120 chars) describing what this source covers.\n\n'
+            f'Reply in exactly this format:\n'
+            f'DOMAIN: software-ai\n'
+            f'DESCRIPTION: Weekly AI/ML research digest by Andrew Ng covering industry trends.'
         )
         resp = await asyncio.to_thread(client.models.generate_content, model=model, contents=prompt)
-        text = _extract_response_text(resp).strip().lower().split()[0]
-        return text if text in DOMAINS else "general"
+        text = _extract_response_text(resp).strip()
+        domain_m = re.search(r'DOMAIN:\s*(\S+)', text, re.IGNORECASE)
+        desc_m = re.search(r'DESCRIPTION:\s*(.+)', text, re.IGNORECASE)
+        domain = domain_m.group(1).strip().lower() if domain_m else "general"
+        if domain not in DOMAINS:
+            domain = "general"
+        description = desc_m.group(1).strip()[:200] if desc_m else ""
+        return {"domain": domain, "description": description}
     except Exception:
-        return "general"
+        return {"domain": "general", "description": ""}
 
 
-@router.post("/detect-domain")
-async def detect_domain(data: dict):
+@router.post("/detect-info")
+async def detect_info(data: dict):
     name = (data.get("name") or "").strip()
     url = (data.get("url") or "").strip()
     if not name and not url:
-        return {"domain": "general"}
-    domain = await _ai_detect_domain(name, url)
-    return {"domain": domain}
+        return {"domain": "general", "description": ""}
+    return await _ai_detect_info(name, url)
 
 
 def _detect_type(url: str) -> str:
@@ -107,6 +133,7 @@ def list_sources(
         for sv in db.query(SourceVote).filter(SourceVote.user_id == current_user.id).all():
             user_votes[sv.source_id] = sv.vote
 
+    current_uid = current_user.id if current_user else None
     return {
         "sources": [
             {
@@ -122,6 +149,7 @@ def list_sources(
                 "downvotes": int(downs),
                 "score": int(ups) - int(downs),
                 "my_vote": user_votes.get(src.id, 0),
+                "is_mine": src.submitted_by == current_uid,
             }
             for src, ups, downs in rows
         ]
@@ -136,8 +164,11 @@ def add_source(
 ):
     url = (data.get("url") or "").strip()
     name = (data.get("name") or "").strip()
+    description = (data.get("description") or "").strip()
     if not url or not name:
         raise HTTPException(400, "name and url are required")
+    if not description:
+        raise HTTPException(400, "description is required")
 
     domain = data.get("domain") or "general"
     if domain not in DOMAINS:
@@ -146,7 +177,7 @@ def add_source(
     src = Source(
         name=name,
         url=url,
-        description=(data.get("description") or "").strip() or None,
+        description=description,
         domain=domain,
         source_type=_detect_type(url),
         submitted_by=current_user.id,
@@ -155,6 +186,34 @@ def add_source(
     db.commit()
     db.refresh(src)
     return {"id": src.id, "source_type": src.source_type}
+
+
+@router.patch("/{source_id}")
+def edit_source(
+    source_id: str,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    src = db.query(Source).filter(Source.id == source_id).first()
+    if not src:
+        raise HTTPException(404, "Source not found")
+    if src.submitted_by != current_user.id:
+        raise HTTPException(403, "You can only edit your own sources")
+
+    if "name" in data and data["name"].strip():
+        src.name = data["name"].strip()
+    if "url" in data and data["url"].strip():
+        src.url = data["url"].strip()
+        src.source_type = _detect_type(src.url)
+    if "description" in data:
+        src.description = data["description"].strip() or None
+    if "domain" in data:
+        d = data["domain"]
+        src.domain = d if d in DOMAINS else "general"
+
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/{source_id}/vote")
