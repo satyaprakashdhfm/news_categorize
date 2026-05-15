@@ -158,19 +158,19 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
 
       if (runId) {
         await feedCardsApi.attachRun({ run_id: runId, card_id: card.id, query: card.title, title: card.title, domain: card.domain, subdomain: card.subdomain });
-        // Reload latest run items + history
+        // Reload all runs — newest first — for both main list and history accordion
         try {
-          const runData = await browserResearchApi.getRun(runId);
-          setItems(runData.blogs || []);
+          const runsData = await browserResearchApi.getCardRuns(card.id);
+          const allRuns = runsData.runs || [];
+          setItems(allRuns.flatMap((run) =>
+            (run.items || []).map((item) => ({ ...item, run_date: run.generated_at }))
+          ));
+          setPastRuns(allRuns);
           setItemType('browser');
           setSourceFilter('all');
           setVisibleCount(PAGE_SIZE);
           setTextSearch('');
         } catch { /* items may already be visible */ }
-        try {
-          const runsData = await browserResearchApi.getCardRuns(card.id);
-          setPastRuns((runsData.runs || []).slice(1));
-        } catch { }
         // Refresh card metadata in background (non-blocking)
         feedCardsApi.getCard(cardId).then(setCard).catch(() => {});
         setRerunStatus('done');
@@ -214,21 +214,28 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
           setItems(runData.blogs || []); setItemType('browser');
         } else { setItems([]); setItemType('article'); }
       } else {
-        // Custom card — main view: latest run's full item list (no cross-run dedup)
-        if (card.run_id) {
-          try {
-            const runData = await browserResearchApi.getRun(card.run_id);
-            setItems(runData.blogs || []);
-          } catch { setItems([]); }
-        } else { setItems([]); }
-        setItemType('browser');
-        // Load history: all runs grouped (past runs shown in accordion below)
+        // Custom card — show ALL items from ALL runs, newest run first
         try {
           const runsData = await browserResearchApi.getCardRuns(card.id);
           const allRuns = runsData.runs || [];
-          // First run is the latest (already shown above); rest go to history
-          setPastRuns(allRuns.slice(1));
-        } catch { setPastRuns([]); }
+          // Flatten all runs' items in order (newest run first)
+          const allItems = allRuns.flatMap((run) =>
+            (run.items || []).map((item) => ({ ...item, run_date: run.generated_at }))
+          );
+          setItems(allItems);
+          // History accordion shows each run grouped
+          setPastRuns(allRuns);
+        } catch {
+          // Fallback: latest run only
+          if (card.run_id) {
+            try {
+              const runData = await browserResearchApi.getRun(card.run_id);
+              setItems(runData.blogs || []);
+            } catch { setItems([]); }
+          } else { setItems([]); }
+          setPastRuns([]);
+        }
+        setItemType('browser');
       }
     } catch { setError('Failed to load items.'); setItems([]); }
     finally { setLoading(false); }
@@ -482,9 +489,26 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
           </div>
         ) : (
           <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-            {visibleItems.map((item, idx) => (
-              <BrowserItem key={`${item.url}-${idx}`} item={item} />
-            ))}
+            {visibleItems.map((item, idx) => {
+              const prevRunDate = idx > 0 ? visibleItems[idx - 1].run_date : null;
+              const showSeparator = item.run_date && item.run_date !== prevRunDate;
+              return (
+                <React.Fragment key={`${item.url}-${idx}`}>
+                  {showSeparator && (
+                    <div style={{
+                      padding: '6px 20px', background: 'var(--bg-2)',
+                      borderBottom: '1px solid var(--line-1)', borderTop: idx > 0 ? '1px solid var(--line-1)' : 'none',
+                      display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--fg-4)', letterSpacing: '0.05em' }}>
+                        Run · {formatTimeAgo(item.run_date)}
+                      </span>
+                    </div>
+                  )}
+                  <BrowserItem item={item} />
+                </React.Fragment>
+              );
+            })}
             {hasMore && (
               <div style={{ padding: '12px 20px', borderTop: '1px solid var(--line-1)' }}>
                 <button onClick={() => setVisibleCount((n) => n + PAGE_SIZE)} className="btn" style={{ width: '100%', justifyContent: 'center' }}>
