@@ -170,9 +170,12 @@ def get_trending_cards(
     limit_per_subdomain: int = Query(3, ge=1, le=10),
     db: Session = Depends(get_db),
 ):
-    cards = db.query(FeedCard).filter(FeedCard.is_global == True).all()
-    # Sort all by pinned_count desc
-    cards_sorted = sorted(cards, key=lambda c: len(c.pinned_by), reverse=True)
+    cards = db.query(FeedCard).all()
+    # Populated cards first, then by pinned_count desc
+    cards_sorted = sorted(
+        cards,
+        key=lambda c: (0 if c.run_id else 1, -len(c.pinned_by)),
+    )
 
     # Group by domain → subdomain
     grouped: dict[str, dict[str, list]] = {}

@@ -83,15 +83,22 @@ function TrendingSidebar({ trending, navigate }) {
             </button>
             {isOpen && (
               <ul className="dom__list">
-                {Object.entries(subdomains).map(([subdomain, cards]) => (
-                  <li key={subdomain} className="dom__item" onClick={() => cards[0] && navigate(`/feed/${cards[0].id}`)}>
-                    <span className="dom__itemName">{SUBCATEGORY_LABELS[subdomain] || subdomain}</span>
-                    <span className="dom__itemMeta">
-                      {cards.length >= 10 && <span className="dom__hot">hot</span>}
-                      <span className="dom__count">{cards.length}</span>
-                    </span>
-                  </li>
-                ))}
+                {Object.entries(subdomains).map(([subdomain, cards]) => {
+                  // Prefer cards with content (run_id), then most pinned
+                  const best = [...cards].sort((a, b) => {
+                    if (!!a.run_id !== !!b.run_id) return a.run_id ? -1 : 1;
+                    return (b.pinned_count || 0) - (a.pinned_count || 0);
+                  })[0];
+                  return (
+                    <li key={subdomain} className="dom__item" onClick={() => best && navigate(`/feed/${best.id}`)}>
+                      <span className="dom__itemName">{SUBCATEGORY_LABELS[subdomain] || subdomain}</span>
+                      <span className="dom__itemMeta">
+                        {cards.length >= 10 && <span className="dom__hot">hot</span>}
+                        <span className="dom__count">{cards.length}</span>
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
