@@ -343,8 +343,18 @@ def _summarize_text(title: str, body: str, client, trace_id: str = None) -> tupl
         return fallback, _empty_usage()
 
     prompt = (
-        "Write a concise blog-style summary in 3 to 4 sentences, factual and clear. "
-        "Highlight what happened, key points, and why it matters.\n\n"
+        "Summarize this news article using ONLY the fields that are clearly present in the content.\n"
+        "Skip any field that is not mentioned or cannot be inferred.\n"
+        "Use this format (one line per field, label in bold):\n\n"
+        "**What happened:** <one sentence>\n"
+        "**Location:** <city, country or 'Not specified'>\n"
+        "**When:** <date or time period mentioned>\n"
+        "**Who:** <people, organizations, or countries involved>\n"
+        "**Why/Cause:** <reason or trigger>\n"
+        "**Impact:** <effects or significance>\n"
+        "**Current status:** <latest state of affairs>\n"
+        "**Next steps:** <planned actions or what to watch>\n\n"
+        "Be concise — one sentence per field. Drop the field entirely if not in the article.\n\n"
         f"Title: {title}\nBody: {body or ''}"
     )
     try:
@@ -468,6 +478,46 @@ def _score_blog_relevance(query: str, blog: BlogItem, client, trace_id: str = No
         return round(max(0.0, min(1.0, blended)), 4), usage_counts
     except Exception:
         return round(min(0.89, lexical_score), 4), _empty_usage()
+
+
+async def _detect_query_context(query: str) -> dict:
+    """Ask Ollama whether to add time/region context to this query.
+    Returns dict with keys: needs_time (bool), needs_region (bool), region (str|None).
+    Falls back to safe defaults (time=True, region=False) on any error.
+    """
+    from app.core.ollama_client import get_llm_client, get_active_model
+    try:
+        _client = get_llm_client()
+        _model = get_active_model()
+    except Exception:
+        return {"needs_time": True, "needs_region": False, "region": None}
+
+    prompt = (
+        f'Query: "{query}"\n\n'
+        f'Answer about this news search query:\n'
+        f'1. NEEDS_TIME: Will adding the current month and year make results more relevant? YES or NO\n'
+        f'2. NEEDS_REGION: Does this query refer to a specific country or region? YES or NO\n'
+        f'3. REGION: If YES for region, name it (e.g. India, US, Europe, China). Otherwise write NONE\n\n'
+        f'Reply ONLY in this exact format (one line):\n'
+        f'NEEDS_TIME:YES NEEDS_REGION:YES REGION:India'
+    )
+    try:
+        resp = await asyncio.to_thread(
+            _client.models.generate_content,
+            model=_model,
+            contents=prompt,
+        )
+        text = _extract_response_text(resp).strip()
+        needs_time = "NEEDS_TIME:YES" in text.upper()
+        needs_region = "NEEDS_REGION:YES" in text.upper()
+        region_match = _re.search(r'REGION:(\w[\w\s]*)', text, _re.IGNORECASE)
+        region = region_match.group(1).strip() if region_match else None
+        if region and region.upper() in ("NONE", "N/A", ""):
+            region = None
+        return {"needs_time": needs_time, "needs_region": needs_region, "region": region}
+    except Exception as _e:
+        logger.warning(f"[BROWSER] query context detection failed: {_e}")
+        return {"needs_time": True, "needs_region": False, "region": None}
 
 
 async def _batch_title_filter(
@@ -1153,10 +1203,9 @@ async def run_live_browser_stream(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 )
 
-                # Build search string: use the raw query but strip leading question
-                # phrases ("what is", "how do", "tell me about") that add no search value.
-                # Keep all intent words ("updates", "latest", "own", etc.) intact.
-                yield emit("step", "Building search queries...")
+                # Build search string: strip leading question phrases that add no
+                # search value, keep all intent words ("updates", "latest", etc.)
+                yield emit("step", "Analysing query context...")
                 import re as _re2
                 _cleaned = query.strip().rstrip("?").strip()
                 _cleaned = _re2.sub(
@@ -1172,28 +1221,36 @@ async def run_live_browser_stream(
                 _has_news_intent = bool(_query_words & _news_intent)
                 _now = datetime.now()
                 _year = _now.year
-                _month = _now.strftime("%B")  # e.g. "May"
+                _month = _now.strftime("%B")
+
+                # Ask AI whether to attach time/region context for this query
+                _ctx = await _detect_query_context(query)
+                _time_suffix = f"{_month} {_year}" if _ctx["needs_time"] else ""
+                _region_suffix = _ctx["region"] if _ctx["needs_region"] and _ctx["region"] else ""
+                _context_suffix = " ".join(filter(None, [_region_suffix, _time_suffix]))
+
+                yield emit("step", (
+                    f"Query: '{_search_str}'"
+                    + (f" | region: {_region_suffix}" if _region_suffix else "")
+                    + (f" | time: {_time_suffix}" if _time_suffix else "")
+                ))
 
                 # ── Per-source queries ─────────────────────────────────────
-                # YouTube: add year (+ "news" if user didn't say it) so results
-                # are recent events, not old tutorials.
+                # YouTube: always need year to avoid old tutorials; add "news"
+                # if user didn't already express news intent.
+                _yt_ctx = " ".join(filter(None, [_region_suffix, str(_year)]))
                 if _has_news_intent:
-                    yt_query: str = f"{_search_str} {_year}"
+                    yt_query: str = f"{_search_str} {_yt_ctx}".strip()
                 else:
-                    yt_query: str = f"{_search_str} news {_year}"
+                    yt_query: str = f"{_search_str} news {_yt_ctx}".strip()
 
-                # Reddit: append "month year" so the most recent threads rise
-                # above old evergreen discussion posts.
-                reddit_query: str = f"{_search_str} {_month} {_year}"
+                # Reddit / Twitter: append AI-decided context (region + time).
+                reddit_query: str = f"{_search_str} {_context_suffix}".strip()
+                twitter_query: str = f"{_search_str} {_context_suffix}".strip()
 
-                # News RSS (Bing/Google): sources already date-filter (when:2d /
-                # interval=3), so keep the raw query — no year needed.
-                news_query: str = _search_str
-
-                # Twitter: "month year" keeps searches anchored to recent events.
-                twitter_query: str = f"{_search_str} {_month} {_year}"
-
-                yield emit("step", f"Query: '{_search_str}' | {_month} {_year}")
+                # News RSS (Bing/Google): already date-filtered at source —
+                # only add region if AI detected one.
+                news_query: str = f"{_search_str} {_region_suffix}".strip() if _region_suffix else _search_str
 
                 sem = asyncio.Semaphore(5)
 
