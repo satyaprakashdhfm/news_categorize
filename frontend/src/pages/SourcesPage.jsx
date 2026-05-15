@@ -63,23 +63,27 @@ function SourceFormModal({ onClose, onDone, existing }) {
     name: existing?.name || '',
     url: existing?.url || '',
     description: existing?.description || '',
-    domain: existing?.domain || 'general',
-  });
-  const [detectedType, setDetectedType] = useState(() => {
-    const u = (existing?.url || '').toLowerCase();
-    if (u.includes('youtube.com')) return 'youtube';
-    if (u.includes('twitter.com') || u.includes('x.com')) return 'twitter';
-    if (u.includes('reddit.com')) return 'reddit';
-    return 'web';
+    domain: existing?.domain || 'TEC',
+    source_type: existing?.source_type || 'web',
   });
   const [aiDetecting, setAiDetecting] = useState(false);
-  const [aiSet, setAiSet] = useState(false);
+  const [aiDone, setAiDone] = useState(isEdit);
+  const [showDomainPicker, setShowDomainPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const detectTimer = useRef(null);
 
+  const detectSourceType = (url) => {
+    const u = url.toLowerCase();
+    if (u.includes('youtube.com') || u.includes('youtu.be')) return 'youtube';
+    if (u.includes('twitter.com') || u.includes('x.com')) return 'twitter';
+    if (u.includes('reddit.com')) return 'reddit';
+    return 'web';
+  };
+
   const triggerAiDetect = (name, url) => {
-    if (!name && !url) return;
+    if (!url) return;
+    setAiDone(false);
     clearTimeout(detectTimer.current);
     detectTimer.current = setTimeout(async () => {
       setAiDetecting(true);
@@ -88,145 +92,130 @@ function SourceFormModal({ onClose, onDone, existing }) {
         setForm(f => ({
           ...f,
           domain: res.domain || f.domain,
-          description: f.description || res.description || '',
+          description: res.description || f.description,
+          source_type: detectSourceType(url),
         }));
-        setAiSet(true);
+        setAiDone(true);
       } catch { /* keep current */ }
       finally { setAiDetecting(false); }
     }, 900);
   };
 
-  const handleNameChange = (val) => {
-    setForm(f => ({ ...f, name: val }));
-    setAiSet(false);
-    if (!isEdit) triggerAiDetect(val, form.url);
-  };
-
   const handleUrlChange = (val) => {
-    setForm(f => ({ ...f, url: val }));
-    setAiSet(false);
-    const u = val.toLowerCase();
-    if (u.includes('youtube.com') || u.includes('youtu.be')) setDetectedType('youtube');
-    else if (u.includes('twitter.com') || u.includes('x.com')) setDetectedType('twitter');
-    else if (u.includes('reddit.com')) setDetectedType('reddit');
-    else setDetectedType('web');
-    if (!isEdit) triggerAiDetect(form.name, val);
+    setForm(f => ({ ...f, url: val, source_type: detectSourceType(val) }));
+    triggerAiDetect(form.name, val);
   };
 
   const submit = async () => {
     if (!form.name.trim() || !form.url.trim()) { setErr('Name and URL are required'); return; }
-    if (!form.description.trim()) { setErr('Description is required — help others know what this source covers'); return; }
+    if (!form.description.trim()) { setErr('Waiting for AI description — or type one yourself'); return; }
     setSaving(true); setErr('');
     try {
-      if (isEdit) {
-        await sourcesApi.edit(existing.id, form);
-      } else {
-        await sourcesApi.add(form);
-      }
-      onDone();
-      onClose();
+      if (isEdit) await sourcesApi.edit(existing.id, form);
+      else await sourcesApi.add(form);
+      onDone(); onClose();
     } catch (e) {
       setErr(e?.response?.data?.detail || 'Failed to save');
     } finally { setSaving(false); }
   };
 
-  const tm = TYPE_META[detectedType];
+  const tm = TYPE_META[form.source_type || 'web'] || TYPE_META.web;
   const domStyle = getDomainColor(form.domain);
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 200,
-      background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }} onClick={onClose}>
-      <div style={{
-        background: 'var(--bg-1)', border: '1px solid var(--line-1)',
-        borderRadius: 'var(--r-md)', padding: 28, width: 480, maxWidth: '95vw',
-        maxHeight: '90vh', overflowY: 'auto',
-      }} onClick={e => e.stopPropagation()}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
+      <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-md)', padding: 28, width: 460, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <span style={{ fontWeight: 700, fontSize: 15 }}>{isEdit ? 'Edit Source' : 'Add a Source'}</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-3)', fontSize: 18 }}>×</button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/* Name */}
           <div>
             <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Name *</label>
-            <input value={form.name} onChange={e => handleNameChange(e.target.value)}
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               placeholder="e.g. The Batch — DeepLearning.AI"
               style={{ width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-sm)', border: '1px solid var(--line-1)', background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, boxSizing: 'border-box' }} />
           </div>
 
-          {/* URL */}
+          {/* URL — AI triggers from here */}
           <div>
             <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>URL *</label>
             <input value={form.url} onChange={e => handleUrlChange(e.target.value)}
               placeholder="https://..."
               style={{ width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-sm)', border: '1px solid var(--line-1)', background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, boxSizing: 'border-box' }} />
-            {form.url && (
-              <span style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: tm.color }}>
-                {tm.icon} {tm.label}
-              </span>
-            )}
           </div>
 
-          {/* Domain pills */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Domain</label>
-              {aiDetecting && <span style={{ fontSize: 10, color: 'var(--fg-4)' }}>AI detecting...</span>}
-              {aiSet && !aiDetecting && (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: domStyle.bg, color: domStyle.color }}>✦ AI suggested</span>
-              )}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {INTEREST_TREE.map(parent => {
-                const pc = TOP_COLORS[parent.code];
-                return (
-                  <div key={parent.code}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: pc.color, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
-                      {parent.label}
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                      {parent.subdomains.map(s => {
-                        const active = form.domain === s.code;
+          {/* AI preview card — shown after URL typed */}
+          {form.url && (
+            <div style={{ borderRadius: 'var(--r-sm)', border: '1px solid var(--line-1)', background: 'var(--bg-2)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+              {aiDetecting ? (
+                <div style={{ fontSize: 12, color: 'var(--fg-4)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: 'var(--fg-4)', animation: 'pulse 1s infinite' }} />
+                  AI is reading the page...
+                </div>
+              ) : (
+                <>
+                  {/* Type + Domain badges */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, background: 'var(--bg-1)', border: '1px solid var(--line-1)', color: tm.color }}>
+                      {tm.icon} {tm.label}
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 99, background: domStyle.bg, color: domStyle.color }}>
+                      {getLabel(form.domain)}
+                    </span>
+                    <button onClick={() => setShowDomainPicker(p => !p)}
+                      style={{ fontSize: 10, color: 'var(--fg-4)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>
+                      {showDomainPicker ? 'done' : 'change domain'}
+                    </button>
+                  </div>
+
+                  {/* Domain picker — collapsed by default */}
+                  {showDomainPicker && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {INTEREST_TREE.map(parent => {
+                        const pc = TOP_COLORS[parent.code];
                         return (
-                          <button key={s.code} onClick={() => { setForm(f => ({ ...f, domain: s.code })); setAiSet(false); }}
-                            style={{ padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                              border: `1px solid ${active ? pc.color : 'var(--line-1)'}`,
-                              background: active ? pc.bg : 'transparent',
-                              color: active ? pc.color : 'var(--fg-4)', transition: 'all 0.12s' }}>
-                            {s.label}
-                          </button>
+                          <div key={parent.code}>
+                            <div style={{ fontSize: 9, fontWeight: 700, color: pc.color, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{parent.label}</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {parent.subdomains.map(s => {
+                                const active = form.domain === s.code;
+                                return (
+                                  <button key={s.code} onClick={() => { setForm(f => ({ ...f, domain: s.code })); setShowDomainPicker(false); }}
+                                    style={{ padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                                      border: `1px solid ${active ? pc.color : 'var(--line-1)'}`,
+                                      background: active ? pc.bg : 'transparent',
+                                      color: active ? pc.color : 'var(--fg-4)' }}>
+                                    {s.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+                  )}
 
-          {/* Description — mandatory, AI pre-fills */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Description *</label>
-              {aiDetecting && <span style={{ fontSize: 10, color: 'var(--fg-4)' }}>AI writing...</span>}
-              {aiSet && !aiDetecting && form.description && (
-                <span style={{ fontSize: 10, color: 'var(--fg-4)' }}>AI suggested — edit freely</span>
+                  {/* Description — editable */}
+                  <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                    placeholder={aiDone ? '' : 'AI will fill this from the page...'}
+                    rows={2}
+                    style={{ width: '100%', padding: '6px 8px', borderRadius: 'var(--r-sm)', border: `1px solid ${!form.description.trim() && err ? 'var(--signal-err)' : 'var(--line-1)'}`, background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }} />
+                </>
               )}
             </div>
-            <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              placeholder="What does this source cover? Who is it for?"
-              rows={3}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--r-sm)', border: `1px solid ${!form.description.trim() && err ? 'var(--signal-err)' : 'var(--line-1)'}`, background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
-          </div>
+          )}
 
-          {err && <div style={{ color: 'var(--signal-err)', fontSize: 12 }}>{err}</div>}
+          {err && <div style={{ fontSize: 12, color: 'var(--signal-err)' }}>{err}</div>}
 
           <button onClick={submit} disabled={saving || aiDetecting}
             style={{ padding: '9px 0', borderRadius: 'var(--r-sm)', background: 'var(--fg-1)', color: 'var(--bg-0)', fontWeight: 700, fontSize: 13, border: 'none', cursor: 'pointer', opacity: (saving || aiDetecting) ? 0.6 : 1 }}>
-            {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Source'}
+            {saving ? 'Saving...' : aiDetecting ? 'Reading page...' : isEdit ? 'Save Changes' : 'Add Source'}
           </button>
         </div>
       </div>
