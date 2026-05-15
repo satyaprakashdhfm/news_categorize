@@ -1034,19 +1034,21 @@ async def run_live_browser_stream(
                 plan: dict = {"subreddits": FALLBACK_SUBS, "youtube_query": query, "news_query": query}
                 if client:
                     plan_prompt = (
-                        f"You are a research planner. Query: '{query}'\n\n"
-                        "Return JSON only — no markdown, no explanation:\n"
-                        '{"subreddits":["5 specific subreddit names most likely to have posts about this exact topic"],'
-                        '"youtube_query":"best YouTube search string for this topic (add relevant keywords)",'
-                        '"news_query":"best news search string for recent news on this topic (be specific)"}\n\n'
-                        "Rules for subreddits:\n"
-                        "- Pick subreddits whose PRIMARY topic directly matches the query subject\n"
-                        "- If query is about India defence/aviation: use india, IndianDefence, aviation, aerospace, geopolitics\n"
-                        "- If query is about economics: use economics, investing, financialindependence\n"
-                        "- If query is about politics: use worldnews, geopolitics, india, PoliticalDiscussion\n"
-                        "- NEVER pick subreddits just because they are popular (AskReddit, funny, pics, todayilearned, news)\n"
-                        "- NEVER pick tech/AI subreddits (MachineLearning, LocalLLaMA) unless the query is specifically about AI/ML\n"
-                        "- Prefer smaller, topic-specific subreddits over giant generic ones"
+                        f"Research query: \"{query}\"\n\n"
+                        "Return ONLY this JSON, no markdown, no explanation:\n"
+                        "{\n"
+                        '  "subreddits": ["sub1","sub2","sub3","sub4","sub5"],\n'
+                        '  "youtube_query": "short keyword search for YouTube",\n'
+                        '  "news_query": "short keyword search for news sites"\n'
+                        "}\n\n"
+                        "Rules:\n"
+                        "- subreddits: 5 names whose PRIMARY topic matches the query. "
+                        "India defence/aviation → [IndiaDefence, aviation, aerospace, geopolitics, india]. "
+                        "Economics → [economics, investing, IndiaInvestments]. "
+                        "AI/tech → [MachineLearning, LocalLLaMA, technology]. "
+                        "NEVER use AskReddit, funny, pics, todayilearned, news, MachineLearning for non-AI queries.\n"
+                        "- youtube_query: 4-6 keywords, no filler words. Example for this query: 'India aircraft engine development Kaveri'\n"
+                        "- news_query: 4-6 keywords focused on the topic. Example: 'India indigenous jet engine update 2024'"
                     )
                     try:
                         resp = client.models.generate_content(model=GEMINI_MODEL, contents=plan_prompt)
@@ -1059,8 +1061,17 @@ async def run_live_browser_stream(
                     except Exception as e:
                         logger.warning(f"[BROWSER] plan LLM failed: {e}")
 
-                yt_query: str = plan.get("youtube_query") or query
-                news_query: str = plan.get("news_query") or query
+                _BAD_PREFIXES = ("short keyword", "best youtube", "best news", "4-6 keywords", "keyword search")
+                def _validate_llm_query(val: str, fallback: str) -> str:
+                    if not val:
+                        return fallback
+                    low = val.lower()
+                    if any(low.startswith(p) for p in _BAD_PREFIXES) or len(val) > 120:
+                        return fallback
+                    return val
+
+                yt_query: str = _validate_llm_query(plan.get("youtube_query") or "", query)
+                news_query: str = _validate_llm_query(plan.get("news_query") or "", query)
 
                 # ── Discover communities from reddit.com/explore ───────────
                 yield emit("step", "Browsing reddit.com/explore to discover real communities...")
@@ -1112,23 +1123,22 @@ async def run_live_browser_stream(
                 yield emit("step", f"Reddit global search for '{query[:60]}' (past week)...")
                 global_posts, global_usage = await _fetch_reddit_global_search(query, limit=10, client=_sum_client)
                 _merge_usage(usage_totals, global_usage)
-                # Deduplicate by URL before merging
+                # Deduplicate by URL before merging; apply keyword filter only to global results
+                # (subreddit posts from LLM-selected subs are already targeted — don't over-filter)
                 existing_urls = {p.url for p in reddit_blogs}
                 new_global = [p for p in global_posts if p.url not in existing_urls]
-                reddit_blogs.extend(new_global)
-                yield emit("step", f"  → {len(new_global)} additional posts from global search (total: {len(reddit_blogs)})")
-
-                # ── Keyword pre-filter: drop Reddit posts with 0 query-term overlap ──
                 q_terms = _tokenize_meaningful(query)
-                if q_terms:
-                    before = len(reddit_blogs)
-                    reddit_blogs = [
-                        p for p in reddit_blogs
+                if q_terms and new_global:
+                    before_g = len(new_global)
+                    new_global = [
+                        p for p in new_global
                         if q_terms.intersection(_tokenize_meaningful(f"{p.title} {p.summary}"))
                     ]
-                    dropped = before - len(reddit_blogs)
-                    if dropped:
-                        yield emit("step", f"  → Dropped {dropped} off-topic Reddit posts (keyword filter)")
+                    dropped_g = before_g - len(new_global)
+                    if dropped_g:
+                        yield emit("step", f"  → Dropped {dropped_g} off-topic global posts (keyword filter)")
+                reddit_blogs.extend(new_global)
+                yield emit("step", f"  → {len(new_global)} additional posts from global search (total: {len(reddit_blogs)})")
 
                 # Switch to a clean context (no proxy) for YouTube + News
                 await _reddit_ctx.close()
