@@ -494,11 +494,9 @@ async def _batch_title_filter(
     # Simple YES/NO format — small models (llama3.2:1b) handle this more reliably
     # than JSON. Each item gets YES (on-topic) or NO (off-topic).
     prompt = (
-        f'Topic: "{query}"\n\n'
-        f'Keep ONLY: news, research findings, industry updates, company announcements, policy changes.\n'
-        f'Remove: student questions, university/college discussions, exam prep, old tutorials, '
-        f'personal experiences, job postings, unrelated topics.\n\n'
-        f'For each item answer YES (keep) or NO (remove).\n'
+        f'A user searched for: "{query}"\n\n'
+        f'For each item below, answer YES if it is a useful result for that search, '
+        f'NO if it does not match what the user was looking for.\n'
         f'Reply ONLY with: 1:YES 2:NO 3:YES ... (number colon YES or NO for every item)\n\n'
         f'{numbered}'
     )
@@ -1157,9 +1155,18 @@ async def run_live_browser_stream(
                 yield emit("step", "Extracting keywords from query...")
                 _kw = list(_tokenize_meaningful(query))
                 _search_str = " ".join(_kw[:6]) if _kw else query
-                # Append "latest news" to YouTube query so we get recent news/research
-                # videos instead of old tutorials or exam-prep content
-                yt_query: str = _search_str + " latest news"
+                # Build YouTube query: keep original words from query that imply
+                # news/updates intent; always add current year for freshness
+                _news_intent = {"update", "updates", "news", "latest", "recent", "current"}
+                _query_words = set(query.lower().split())
+                _year = datetime.now().year
+                if _query_words & _news_intent:
+                    # User already said "updates/news/latest" — just add year
+                    yt_query: str = f"{_search_str} {_year}"
+                else:
+                    # No explicit news intent — add "news" + year so YouTube
+                    # surfaces current events rather than tutorials/evergreen content
+                    yt_query: str = f"{_search_str} news {_year}"
                 news_query: str = _search_str
                 yield emit("step", f"Keywords: {_search_str}")
 

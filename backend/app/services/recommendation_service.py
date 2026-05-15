@@ -273,11 +273,9 @@ async def _ai_filter_items(items: list[dict], topic: str) -> list[dict]:
         _model = get_active_model()
         lines = "\n".join(f"{i+1}. {it.get('title','')[:120]}" for i, it in enumerate(items))
         prompt = (
-            f'Topic: "{topic}"\n\n'
-            f'Keep ONLY: news, research findings, industry updates, company announcements, policy changes.\n'
-            f'Remove: student questions, university/college discussions, exam prep, old tutorials, '
-            f'personal experiences, job postings, unrelated topics.\n\n'
-            f'For each item answer YES (keep) or NO (remove).\n'
+            f'A user is interested in: "{topic}"\n\n'
+            f'For each item below, answer YES if it is a useful result for that interest, '
+            f'NO if it does not match what the user is looking for.\n'
             f'Reply ONLY with: 1:YES 2:NO 3:YES (number colon YES or NO for every item)\n\n'
             f'{lines}'
         )
