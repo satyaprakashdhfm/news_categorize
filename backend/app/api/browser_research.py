@@ -690,6 +690,25 @@ async def _fetch_reddit_global_search(
     if not posts_data:
         return [], _empty_usage()
 
+    # Filter by title relevance: keep only posts whose title contains at least 1
+    # search keyword. This removes completely off-topic posts (job listings, car
+    # advice, etc.) that matched only because of a generic term like "india".
+    meaningful_kw = set(kw)
+    if meaningful_kw:
+        title_matched = [
+            d for d in posts_data
+            if meaningful_kw.intersection(_tokenize_meaningful(d.get("title", "")))
+        ]
+        # If title filter is too strict, also allow subreddit name to count
+        if len(title_matched) < 5:
+            title_matched = [
+                d for d in posts_data
+                if meaningful_kw.intersection(
+                    _tokenize_meaningful(d.get("title", "") + " " + (d.get("subreddit") or ""))
+                )
+            ]
+        posts_data = title_matched if title_matched else posts_data
+
     usage_totals = _empty_usage()
     posts = []
     for data in posts_data[:safe_limit]:
