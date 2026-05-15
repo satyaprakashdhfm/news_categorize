@@ -495,7 +495,10 @@ async def _batch_title_filter(
     # than JSON. Each item gets YES (on-topic) or NO (off-topic).
     prompt = (
         f'Topic: "{query}"\n\n'
-        f'For each numbered item, answer YES if it is directly about this topic, NO if it is not.\n'
+        f'Keep ONLY: news, research findings, industry updates, company announcements, policy changes.\n'
+        f'Remove: student questions, university/college discussions, exam prep, old tutorials, '
+        f'personal experiences, job postings, unrelated topics.\n\n'
+        f'For each item answer YES (keep) or NO (remove).\n'
         f'Reply ONLY with: 1:YES 2:NO 3:YES ... (number colon YES or NO for every item)\n\n'
         f'{numbered}'
     )
@@ -1154,7 +1157,9 @@ async def run_live_browser_stream(
                 yield emit("step", "Extracting keywords from query...")
                 _kw = list(_tokenize_meaningful(query))
                 _search_str = " ".join(_kw[:6]) if _kw else query
-                yt_query: str = _search_str
+                # Append "latest news" to YouTube query so we get recent news/research
+                # videos instead of old tutorials or exam-prep content
+                yt_query: str = _search_str + " latest news"
                 news_query: str = _search_str
                 yield emit("step", f"Keywords: {_search_str}")
 
