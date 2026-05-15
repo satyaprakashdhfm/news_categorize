@@ -376,8 +376,8 @@ export default function ProfilePage({ isDark, toggleDark }) {
                               <span style={{
                                 flexShrink: 0, padding: '1px 6px', borderRadius: 'var(--r-sm)',
                                 fontWeight: 700, textTransform: 'uppercase', fontSize: 10,
-                                background: b.source === 'reddit' ? 'rgba(232,145,60,0.12)' : b.source === 'youtube' ? 'rgba(240,110,110,0.12)' : b.source === 'hackernews' ? 'rgba(255,102,0,0.12)' : 'var(--accent-soft)',
-                                color: b.source === 'reddit' ? '#E8913C' : b.source === 'youtube' ? 'var(--signal-critical)' : b.source === 'hackernews' ? '#FF6600' : 'var(--accent)',
+                                background: b.source === 'reddit' ? 'rgba(232,145,60,0.12)' : b.source === 'youtube' ? 'rgba(240,110,110,0.12)' : b.source === 'hackernews' ? 'rgba(255,102,0,0.12)' : b.source === 'twitter' ? 'rgba(29,161,242,0.12)' : 'var(--accent-soft)',
+                                color: b.source === 'reddit' ? '#E8913C' : b.source === 'youtube' ? 'var(--signal-critical)' : b.source === 'hackernews' ? '#FF6600' : b.source === 'twitter' ? '#1DA1F2' : 'var(--accent)',
                               }}>{b.source === 'hackernews' ? 'HN' : b.source}</span>
                               <span style={{ color: 'var(--fg-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.title}</span>
                               {b.url && (

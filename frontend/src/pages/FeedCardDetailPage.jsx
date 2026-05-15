@@ -19,6 +19,7 @@ const SOURCE_COLORS = {
   reddit: { bg: 'rgba(232,145,60,0.12)', color: '#E8913C' },
   youtube: { bg: 'rgba(240,110,110,0.12)', color: 'var(--signal-critical)' },
   news: { bg: 'var(--accent-soft)', color: 'var(--accent)' },
+  twitter: { bg: 'rgba(29,161,242,0.12)', color: '#1DA1F2' },
 };
 
 function todayParam() {
@@ -435,7 +436,7 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
 
             {/* Source filter — always visible */}
             <div style={{ display: 'flex', gap: 2 }}>
-              {['all', 'reddit', 'youtube', 'news'].map((src) => {
+              {['all', 'reddit', 'youtube', 'news', 'twitter'].map((src) => {
                 const count = src === 'all'
                   ? items.length
                   : items.filter(i => (i.source || 'news') === src).length;
@@ -545,7 +546,7 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
                     {run.item_count} items
                   </span>
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-                    {['reddit','youtube','news'].map((src) => {
+                    {['reddit','youtube','news','twitter'].map((src) => {
                       const cnt = run.items.filter(i => i.source === src).length;
                       if (!cnt) return null;
                       const c = SOURCE_COLORS[src] || { bg: 'var(--bg-2)', color: 'var(--fg-3)' };
