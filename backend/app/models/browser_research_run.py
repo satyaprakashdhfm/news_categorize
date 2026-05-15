@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -48,6 +48,7 @@ class BrowserResearchItem(Base):
     score = Column(Integer, nullable=True)
     comments = Column(Integer, nullable=True)
     published_at = Column(String, nullable=True)
+    relevance_score = Column(Float, nullable=True)
 
     run = relationship("BrowserResearchRun", back_populates="items")
 

@@ -1281,7 +1281,7 @@ async def run_live_browser_stream(
                 all_blogs: list[BlogItem] = reddit_blogs + youtube_blogs + news_blogs
                 yield emit("step", f"Total collected: {len(all_blogs)} items. Running relevance scoring...")
                 blogs, rel_usage = await _filter_by_relevance(
-                    blogs=all_blogs, query=query, threshold=0.0, client=client
+                    blogs=all_blogs, query=query, threshold=0.45, client=client
                 )
                 _merge_usage(usage_totals, rel_usage)
 
@@ -1309,6 +1309,7 @@ async def run_live_browser_stream(
                         run_id=run_id, source=blog.source, title=blog.title, summary=blog.summary,
                         url=blog.url, community=blog.community, channel=blog.channel,
                         score=blog.score, comments=blog.comments,
+                        relevance_score=blog.relevance_score,
                     ))
                 db.commit()
                 yield emit("step", f"Done! {len(blogs)} results | {usage_schema.calls} LLM calls | ${usage_schema.estimated_cost_usd:.5f}")
