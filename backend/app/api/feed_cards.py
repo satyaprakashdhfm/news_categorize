@@ -146,44 +146,20 @@ def get_global_cards(
     db: Session = Depends(get_db),
 ):
     from datetime import datetime, timedelta
-    q = db.query(FeedCard).filter(FeedCard.is_global == True)
+    q = db.query(FeedCard)
     if domain:
         q = q.filter(FeedCard.domain == domain.upper())
     if subdomain:
         q = q.filter(FeedCard.subdomain == subdomain.upper())
     if card_type:
         q = q.filter(FeedCard.type == card_type)
-    # hours_back only applies to custom/research cards — domain cards are always shown
-    # regardless of when they were last updated (cron refreshes them periodically)
-    custom_since = None
     if hours_back:
-        custom_since = datetime.now() - timedelta(hours=hours_back)
+        since = datetime.now() - timedelta(hours=hours_back)
+        q = q.filter(FeedCard.updated_at >= since)
 
-    # Find domain+subdomain pairs that have a populated domain card (to shadow duplicates)
-    covered = db.query(FeedCard.domain, FeedCard.subdomain).filter(
-        FeedCard.type == "domain",
-        FeedCard.run_id.isnot(None),
-        FeedCard.is_global == True,
-    ).all()
-    covered_pairs = {(r.domain, r.subdomain) for r in covered}
-
-    all_candidates = q.order_by(FeedCard.updated_at.desc(), FeedCard.created_at.desc()).all()
-    cards = []
-    for card in all_candidates:
-        if card.type == "domain":
-            # Always show domain cards — even unpopulated ones so the feed has structure
-            cards.append(card)
-        else:
-            # Apply time filter to custom/research cards
-            if custom_since and card.updated_at and card.updated_at < custom_since:
-                continue
-            # Skip custom cards shadowed by a populated domain card for the same slot
-            if card.domain and card.subdomain and (card.domain, card.subdomain) in covered_pairs:
-                continue
-            cards.append(card)
-
-    total = len(cards)
-    cards = cards[offset: offset + limit]
+    q = q.order_by(FeedCard.updated_at.desc(), FeedCard.created_at.desc())
+    total = q.count()
+    cards = q.offset(offset).limit(limit).all()
     return FeedCardListResponse(cards=cards, total=total)
 
 
