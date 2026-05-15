@@ -177,10 +177,7 @@ async def _search_reddit(subreddits: list[str]) -> list[dict]:
     try:
         from app.services.reddit_scraping_service import reddit_scraping_service
         community_results = await reddit_scraping_service.scrape_communities(
-            communities=subreddits[:2],
-            mode="hot",
-            posts_per_community=2,
-            summarize=False,
+            communities=subreddits[:2], mode="hot", posts_per_community=2, summarize=False,
         )
         results = []
         for community in community_results:
@@ -205,12 +202,10 @@ async def _search_youtube(channels: list[str]) -> list[dict]:
     try:
         from app.services.youtube_scraping_service import youtube_scraping_service
         channel_results = await youtube_scraping_service.scrape_channels(
-            channels=channels[:1],
-            videos_per_channel=2,
-            summarize=False,
+            channels=channels[:1], videos_per_channel=2, summarize=False,
         )
         results = []
-        for channel in channel_results:
+        for channel in (channel_results if isinstance(channel_results, list) else []):
             for video in channel.get("videos", []):
                 if video.get("title"):
                     results.append({
@@ -223,6 +218,47 @@ async def _search_youtube(channels: list[str]) -> list[dict]:
         return results
     except Exception as exc:
         logger.warning(f"[CRON] YouTube failed: {exc}")
+        return []
+
+
+async def _search_hackernews(keywords: list[str]) -> list[dict]:
+    if not keywords:
+        return []
+    try:
+        from app.services.hackernews_service import hackernews_service
+        stories = await hackernews_service.fetch_best(limit=40)
+        matched = await hackernews_service.search_by_keywords(keywords[:3], stories)
+        return [
+            {
+                "title": s["title"],
+                "summary": f"Hacker News — {s.get('score', 0)} points · {s.get('comments', 0)} comments",
+                "source_url": s.get("hn_url") or s.get("url", ""),
+                "source_type": "hackernews",
+                "score": s.get("score"),
+            }
+            for s in matched[:3]
+        ]
+    except Exception as exc:
+        logger.warning(f"[RECS] HN failed: {exc}")
+        return []
+
+
+async def _fetch_rss(sub_code: str, domain_code: str) -> list[dict]:
+    try:
+        from app.services.rss_service import rss_service
+        items = await rss_service.fetch_for_subdomain(sub_code, limit_per_feed=3)
+        return [
+            {
+                "title": item["title"],
+                "summary": item.get("summary", ""),
+                "source_url": item["url"],
+                "source_type": "rss",
+                "score": None,
+            }
+            for item in items if item.get("title")
+        ]
+    except Exception as exc:
+        logger.warning(f"[RECS] RSS failed for {sub_code}: {exc}")
         return []
 
 

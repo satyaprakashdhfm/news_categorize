@@ -3,14 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import { authApi, browserResearchApi, feedCardsApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
-
-const DOMAIN_OPTIONS = [
-  { id: 'TEC', label: 'Science & Technology', color: 'var(--domain-tech)' },
-  { id: 'ECO', label: 'Economy & Finance', color: 'var(--domain-econ)' },
-  { id: 'POL', label: 'Politics & Governance', color: 'var(--domain-policy)' },
-  { id: 'BUS', label: 'Business & Markets', color: 'var(--domain-biz)' },
-  { id: 'OTH', label: 'Other', color: 'var(--domain-others)' },
-];
+import { INTEREST_TREE } from '@/utils/helpers';
 
 function fmtInt(value) {
   return Number(value || 0).toLocaleString();
@@ -39,6 +32,95 @@ function InitialsAvatar({ name }) {
   );
 }
 
+// ── Chip used for subdomain toggles ──────────────────────────────────────────
+function InterestChip({ label, active, color, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        padding: '5px 13px',
+        borderRadius: 'var(--r-pill)',
+        fontSize: 13,
+        fontWeight: active ? 600 : 400,
+        cursor: 'pointer',
+        transition: 'all 0.15s',
+        border: `1.5px solid ${active ? color : 'var(--line-1)'}`,
+        background: active ? `color-mix(in srgb, ${color} 18%, var(--bg-1))` : 'var(--bg-1)',
+        color: active ? color : 'var(--fg-3)',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {active && (
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <path d="M2 5 L4 7 L8 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      )}
+      {label}
+    </button>
+  );
+}
+
+// ── Single domain group (always visible chips) ────────────────────────────────
+function DomainGroup({ domain, interests, onToggle }) {
+  const activeSubCount = domain.subdomains.filter(s => interests.includes(s.code)).length;
+
+  return (
+    <div style={{
+      borderRadius: 'var(--r-lg)',
+      overflow: 'hidden',
+      background: 'var(--bg-1)',
+      border: '1px solid var(--line-1)',
+      borderLeft: `3px solid ${activeSubCount > 0 ? domain.color : 'var(--line-1)'}`,
+      transition: 'border-color 0.2s',
+    }}>
+      {/* Domain header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 16px',
+        background: activeSubCount > 0 ? `color-mix(in srgb, ${domain.color} 5%, var(--bg-1))` : 'transparent',
+        borderBottom: '1px solid var(--line-1)',
+      }}>
+        <span style={{ fontSize: 16 }}>{domain.icon}</span>
+        <span style={{
+          fontWeight: 700, fontSize: 'var(--t-body)',
+          color: activeSubCount > 0 ? domain.color : 'var(--fg-1)',
+        }}>
+          {domain.label}
+        </span>
+        {activeSubCount > 0 && (
+          <span style={{
+            marginLeft: 'auto',
+            padding: '2px 8px', borderRadius: 'var(--r-pill)',
+            fontSize: 11, fontWeight: 700,
+            background: `color-mix(in srgb, ${domain.color} 15%, transparent)`,
+            color: domain.color,
+          }}>
+            {activeSubCount} selected
+          </span>
+        )}
+      </div>
+
+      {/* Subdomain chips — always visible */}
+      <div style={{
+        padding: '12px 16px',
+        display: 'flex', flexWrap: 'wrap', gap: 6,
+      }}>
+        {domain.subdomains.map((sub) => (
+          <InterestChip
+            key={sub.code}
+            label={sub.label}
+            active={interests.includes(sub.code)}
+            color={domain.color}
+            onClick={() => onToggle(sub.code)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── ProfilePage ───────────────────────────────────────────────────────────────
 export default function ProfilePage({ isDark, toggleDark }) {
   const { user, setUser, isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -57,10 +139,7 @@ export default function ProfilePage({ isDark, toggleDark }) {
   const [interestsSaved, setInterestsSaved] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
+    if (!isAuthenticated) { navigate('/login'); return; }
     setInterests(user?.interests || []);
     loadHistory();
     loadPins();
@@ -99,8 +178,8 @@ export default function ProfilePage({ isDark, toggleDark }) {
     } catch { setRunData(null); } finally { setRunLoading(false); }
   };
 
-  const toggleInterest = (id) => {
-    setInterests((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
+  const toggleInterest = (code) => {
+    setInterests((prev) => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
     setInterestsSaved(false);
   };
 
@@ -116,6 +195,10 @@ export default function ProfilePage({ isDark, toggleDark }) {
     }
   };
 
+  const totalSubSelected = INTEREST_TREE.reduce(
+    (acc, d) => acc + d.subdomains.filter(s => interests.includes(s.code)).length, 0
+  );
+
   const joinedDate = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
     : null;
@@ -124,7 +207,7 @@ export default function ProfilePage({ isDark, toggleDark }) {
     <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
       <Header isDark={isDark} toggleDark={toggleDark} />
 
-      <main className="main" style={{ maxWidth: 800, margin: '0 auto', padding: '0 24px 40px' }}>
+      <main style={{ maxWidth: 800, margin: '0 auto', padding: '0 24px 40px' }}>
         {/* User Info Card */}
         <div className="panel" style={{ marginTop: 32, marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -159,47 +242,65 @@ export default function ProfilePage({ isDark, toggleDark }) {
               </p>
               <p className="meta" style={{ marginTop: 2 }}>Research runs</p>
             </div>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>
+                {totalSubSelected}
+              </p>
+              <p className="meta" style={{ marginTop: 2 }}>Interests tracked</p>
+            </div>
           </div>
         </div>
 
-        {/* Interests */}
+        {/* Interests Panel */}
         <div className="panel" style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <h2 style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>Domain Interests</h2>
-            <span className="meta">Used to generate your For You recommendations</span>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div>
+              <h2 style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--fg-1)', margin: 0 }}>
+                Your Interests
+              </h2>
+              <p className="meta" style={{ marginTop: 4 }}>
+                Pick specific topics — used to generate your personalised <strong style={{ color: 'var(--fg-2)' }}>For You</strong> feed from Google News, Reddit, YouTube, Hacker News and RSS.
+              </p>
+            </div>
+            {totalSubSelected > 0 && (
+              <span style={{
+                flexShrink: 0, marginLeft: 12, padding: '3px 10px',
+                borderRadius: 'var(--r-pill)', fontSize: 'var(--t-micro)', fontWeight: 700,
+                background: 'var(--accent-soft)', color: 'var(--accent)',
+              }}>
+                {totalSubSelected} selected
+              </span>
+            )}
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-            {DOMAIN_OPTIONS.map((d) => {
-              const active = interests.includes(d.id);
-              return (
-                <button
-                  key={d.id}
-                  onClick={() => toggleInterest(d.id)}
-                  style={{
-                    padding: '6px 14px', borderRadius: 'var(--r-lg)', fontSize: 'var(--t-meta)',
-                    fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
-                    border: `1.5px solid ${active ? d.color : 'var(--line-1)'}`,
-                    background: active ? `color-mix(in srgb, ${d.color} 12%, var(--bg-1))` : 'var(--bg-1)',
-                    color: active ? d.color : 'var(--fg-3)',
-                  }}
-                >
-                  {active ? '✓ ' : ''}{d.label}
-                </button>
-              );
-            })}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
+            {INTEREST_TREE.map((domain) => (
+              <DomainGroup
+                key={domain.code}
+                domain={domain}
+                interests={interests}
+                onToggle={toggleInterest}
+              />
+            ))}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, marginTop: 16,
+            padding: '14px 0 0', borderTop: '1px solid var(--line-1)',
+          }}>
             <button
               className="btn btn--primary"
               onClick={saveInterests}
               disabled={interestsSaving}
-              style={{ minWidth: 120 }}
+              style={{ minWidth: 140 }}
             >
-              {interestsSaving ? 'Saving...' : interestsSaved ? '✓ Saved' : 'Save Interests'}
+              {interestsSaving ? 'Saving…' : interestsSaved ? '✓ Saved!' : 'Save Interests'}
             </button>
-            {interests.length === 0 && (
-              <span className="meta" style={{ color: 'var(--signal-warn)' }}>Select at least one domain to get recommendations</span>
-            )}
+            <span className="meta" style={{ color: totalSubSelected === 0 ? 'var(--signal-warn)' : 'var(--fg-4)' }}>
+              {totalSubSelected === 0
+                ? 'Select at least one topic to enable recommendations'
+                : `${totalSubSelected} topic${totalSubSelected !== 1 ? 's' : ''} selected across all categories`}
+            </span>
           </div>
         </div>
 
@@ -237,8 +338,7 @@ export default function ProfilePage({ isDark, toggleDark }) {
                     style={{
                       width: '100%', textAlign: 'left', padding: '16px 24px',
                       background: 'transparent', border: 'none', cursor: 'pointer',
-                      color: 'inherit', display: 'block',
-                      transition: 'background 0.15s',
+                      color: 'inherit', display: 'block', transition: 'background 0.15s',
                     }}
                     onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-2)'}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -255,10 +355,9 @@ export default function ProfilePage({ isDark, toggleDark }) {
                         </div>
                       </div>
                       <span style={{
-                        fontSize: 'var(--t-meta)', fontWeight: 600,
+                        fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--fg-3)',
                         transition: 'transform 0.2s',
                         transform: openRun === h.run_id ? 'rotate(180deg)' : 'none',
-                        color: 'var(--fg-3)',
                       }}>▾</span>
                     </div>
                   </button>
@@ -277,9 +376,9 @@ export default function ProfilePage({ isDark, toggleDark }) {
                               <span style={{
                                 flexShrink: 0, padding: '1px 6px', borderRadius: 'var(--r-sm)',
                                 fontWeight: 700, textTransform: 'uppercase', fontSize: 10,
-                                background: b.source === 'reddit' ? 'rgba(232,145,60,0.12)' : b.source === 'youtube' ? 'rgba(240,110,110,0.12)' : 'var(--accent-soft)',
-                                color: b.source === 'reddit' ? '#E8913C' : b.source === 'youtube' ? 'var(--signal-critical)' : 'var(--accent)',
-                              }}>{b.source}</span>
+                                background: b.source === 'reddit' ? 'rgba(232,145,60,0.12)' : b.source === 'youtube' ? 'rgba(240,110,110,0.12)' : b.source === 'hackernews' ? 'rgba(255,102,0,0.12)' : 'var(--accent-soft)',
+                                color: b.source === 'reddit' ? '#E8913C' : b.source === 'youtube' ? 'var(--signal-critical)' : b.source === 'hackernews' ? '#FF6600' : 'var(--accent)',
+                              }}>{b.source === 'hackernews' ? 'HN' : b.source}</span>
                               <span style={{ color: 'var(--fg-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.title}</span>
                               {b.url && (
                                 <a href={b.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}

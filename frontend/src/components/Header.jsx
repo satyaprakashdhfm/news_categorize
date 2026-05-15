@@ -41,7 +41,7 @@ export default function Header({ isDark, toggleDark }) {
         </span>
         <span className="brand__text">
           <span className="brand__name">Curio</span>
-          <span className="brand__tag">Global News Intelligence</span>
+          <span className="brand__tag">News Intelligence</span>
         </span>
       </Link>
 

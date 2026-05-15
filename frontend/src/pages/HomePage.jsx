@@ -5,7 +5,7 @@ import FilterBar from '@/components/FilterBar';
 import FeedCard from '@/components/FeedCard';
 import { feedCardsApi, recommendationsApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
-import { CATEGORIES, SUBCATEGORY_LABELS } from '@/utils/helpers';
+import { CATEGORIES, SUBCATEGORY_LABELS, INTEREST_TREE } from '@/utils/helpers';
 
 const DOMAIN_COLORS_CSS = {
   TEC: 'var(--domain-tech)',
@@ -20,6 +20,30 @@ const SOURCE_ICONS = {
   reddit: '🔴',
   youtube: '▶️',
 };
+
+function TrendingShimmer() {
+  const rows = [5, 3, 4, 2];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '4px 0' }}>
+      {rows.map((count, i) => (
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Domain header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="shimmer" style={{ width: 8, height: 8, borderRadius: '50%' }} />
+            <div className="shimmer" style={{ width: `${60 + i * 20}px`, height: 13 }} />
+          </div>
+          {/* Subdomain rows */}
+          {Array.from({ length: count }).map((_, j) => (
+            <div key={j} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16 }}>
+              <div className="shimmer" style={{ width: `${80 + (j * 17) % 60}px`, height: 11 }} />
+              <div className="shimmer" style={{ width: 16, height: 11 }} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function TrendingSidebar({ trending, navigate }) {
   const [openIds, setOpenIds] = useState(new Set(['TEC', 'ECO']));
@@ -41,7 +65,7 @@ function TrendingSidebar({ trending, navigate }) {
   return (
     <>
       {sortedDomains.map((domain) => {
-        const catInfo = CATEGORIES.find((c) => c.id === domain);
+        const domainInfo = INTEREST_TREE.find((d) => d.code === domain);
         const subdomains = trending[domain];
         const isOpen = openIds.has(domain);
 
@@ -49,7 +73,7 @@ function TrendingSidebar({ trending, navigate }) {
           <div key={domain} className={`dom ${isOpen ? 'is-open' : ''}`}>
             <button className="dom__head" onClick={() => toggle(domain)}>
               <span className="dom__dot" style={{ background: DOMAIN_COLORS_CSS[domain] || 'var(--fg-3)' }} />
-              <span className="dom__name">{catInfo ? catInfo.name : domain}</span>
+              <span className="dom__name">{domainInfo ? `${domainInfo.icon} ${domainInfo.label}` : domain}</span>
               <span className={`pulse pulse--${isOpen ? 'live' : 'steady'}`}>
                 <span className="pulse__ring" /><span className="pulse__core" />
               </span>
@@ -190,6 +214,7 @@ export default function HomePage({ isDark, toggleDark }) {
 
   const [trending, setTrending] = useState({});
   const [trendingLoading, setTrendingLoading] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
 
   const loadGlobal = useCallback(async () => {
     setGlobalLoading(true);
@@ -198,14 +223,16 @@ export default function HomePage({ isDark, toggleDark }) {
       const params = { limit: 100 };
       if (domain) params.domain = domain;
       if (subdomain) params.subdomain = subdomain;
+      if (hoursBack) params.hours_back = hoursBack;
       const res = await feedCardsApi.getGlobal(params);
       setGlobalCards(res.cards || []);
+      setLastSyncTime(new Date());
     } catch {
       setGlobalError('Failed to load global feed.');
     } finally {
       setGlobalLoading(false);
     }
-  }, [domain, subdomain]);
+  }, [domain, subdomain, hoursBack]);
 
   const loadMyCards = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -213,12 +240,14 @@ export default function HomePage({ isDark, toggleDark }) {
     try {
       const params = {};
       if (domain) params.domain = domain;
+      if (hoursBack) params.hours_back = hoursBack;
       const res = await feedCardsApi.getMyCards(params);
       setMyCards(res.cards || []);
+      setLastSyncTime(new Date());
     } catch { /* silent */ } finally {
       setMyLoading(false);
     }
-  }, [isAuthenticated, domain]);
+  }, [isAuthenticated, domain, hoursBack]);
 
   const loadMyPins = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -226,6 +255,7 @@ export default function HomePage({ isDark, toggleDark }) {
     try {
       const pins = await feedCardsApi.getMyFeed();
       setMyPins(pins || []);
+      setLastSyncTime(new Date());
     } catch { /* silent */ } finally {
       setSavedLoading(false);
     }
@@ -239,6 +269,7 @@ export default function HomePage({ isDark, toggleDark }) {
       if (domain) params.domain = domain;
       const res = await recommendationsApi.getMy(params);
       setRecs(res.recommendations || []);
+      setLastSyncTime(new Date());
     } catch { /* silent */ } finally {
       setRecsLoading(false);
     }
@@ -285,6 +316,16 @@ export default function HomePage({ isDark, toggleDark }) {
     else loadRecs();
   };
 
+  const activeCount = activeTab === 'global' ? globalCards.length
+    : activeTab === 'your' ? myCards.length
+    : activeTab === 'saved' ? myPins.length
+    : recs.length;
+
+  const activeCountLabel = activeTab === 'global' ? 'Cards today'
+    : activeTab === 'saved' ? 'Saved cards'
+    : activeTab === 'your' ? 'Your cards'
+    : 'For you';
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-0)' }}>
       <Header isDark={isDark} toggleDark={toggleDark} />
@@ -302,11 +343,13 @@ export default function HomePage({ isDark, toggleDark }) {
           <div className="page__actions">
             <div className="metric">
               <span className="eyebrow">Last sync</span>
-              <span className="metric__val mono">{new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} UTC</span>
+              <span className="metric__val mono">
+                {lastSyncTime ? lastSyncTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' UTC' : '—'}
+              </span>
             </div>
             <div className="metric">
-              <span className="eyebrow">Cards today</span>
-              <span className="metric__val">{globalCards.length}</span>
+              <span className="eyebrow">{activeCountLabel}</span>
+              <span className="metric__val">{activeCount}</span>
             </div>
             <Link to="/custom/browser" className="btn btn--primary btn--lg">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2V12 M2 7H12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
@@ -324,12 +367,12 @@ export default function HomePage({ isDark, toggleDark }) {
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 9 L5 6 L7 8 L10 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 Trending
               </span>
-              {trendingLoading && (
-                <div style={{ width: 12, height: 12, border: '1.5px solid var(--fg-3)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-              )}
             </div>
             <div className="sidebar__scroll">
-              <TrendingSidebar trending={trending} navigate={navigate} />
+              {trendingLoading && Object.keys(trending).length === 0
+                ? <TrendingShimmer />
+                : <TrendingSidebar trending={trending} navigate={navigate} />
+              }
             </div>
             <div className="sidebar__foot">
               <span className="meta">5 domains</span>

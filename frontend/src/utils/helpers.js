@@ -42,33 +42,78 @@ export const DOMAIN_COLORS = {
   OTH: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-600 dark:text-gray-300', border: 'border-gray-200 dark:border-gray-600' },
 };
 
-export const SUBCATEGORY_CODES = {
-  POL: ['EXE', 'LEG', 'JUD', 'GEO'],
-  ECO: ['MAC', 'MIC', 'INV', 'MON', 'TRD'],
-  BUS: ['SCA', 'MID'],
-  TEC: ['SAI', 'PHY', 'BIO', 'ROB', 'DEF', 'SPC', 'NMI', 'EHW'],
-  OTH: ['OTH'],
-};
+// ── Hierarchical interest tree (mirrors backend interests_config.py) ────────
+export const INTEREST_TREE = [
+  {
+    code: 'TEC', label: 'Technology', icon: '🔬', color: 'var(--domain-tech)',
+    subdomains: [
+      { code: 'SAI',  label: 'Software & AI' },
+      { code: 'LLM',  label: 'LLMs & Generative AI' },
+      { code: 'AGT',  label: 'AI Agents & MCP' },
+      { code: 'WEB',  label: 'Web Development' },
+      { code: 'MOB',  label: 'Mobile Development' },
+      { code: 'CLD',  label: 'Cloud & DevOps' },
+      { code: 'SEC',  label: 'Cybersecurity' },
+      { code: 'DAT',  label: 'Data Science & Analytics' },
+      { code: 'OSS',  label: 'Open Source' },
+      { code: 'ROB',  label: 'Robotics & Automation' },
+      { code: 'BLK',  label: 'Blockchain & Crypto' },
+      { code: 'HRD',  label: 'Hardware & Chips' },
+      { code: 'SPC',  label: 'Space' },
+      { code: 'PHY',  label: 'Physics & Quantum' },
+      { code: 'BIO',  label: 'Biotech & Genomics' },
+      { code: 'DEF',  label: 'Defence Technology' },
+      { code: 'NMI',  label: 'Nano & Materials' },
+    ],
+  },
+  {
+    code: 'BUS', label: 'Business & Finance', icon: '💼', color: 'var(--domain-biz)',
+    subdomains: [
+      { code: 'SCA', label: 'Startups & Venture Capital' },
+      { code: 'MID', label: 'Markets & Industry' },
+      { code: 'FIN', label: 'FinTech & Payments' },
+      { code: 'INV', label: 'Investing & Markets' },
+      { code: 'MON', label: 'Monetary Policy' },
+      { code: 'TRD', label: 'Trade & Global Economy' },
+    ],
+  },
+  {
+    code: 'POL', label: 'Politics & World', icon: '⚖️', color: 'var(--domain-policy)',
+    subdomains: [
+      { code: 'GEO', label: 'Geopolitics' },
+      { code: 'EXE', label: 'Government & Executive' },
+      { code: 'LEG', label: 'Legislature & Policy' },
+      { code: 'JUD', label: 'Judiciary & Law' },
+      { code: 'DIP', label: 'Diplomacy & Security' },
+    ],
+  },
+  {
+    code: 'ECO', label: 'Economy', icon: '📈', color: 'var(--domain-econ)',
+    subdomains: [
+      { code: 'MAC', label: 'Macroeconomics' },
+      { code: 'MIC', label: 'Microeconomics' },
+      { code: 'ENE', label: 'Energy & Resources' },
+      { code: 'CLM', label: 'Climate & Environment' },
+    ],
+  },
+  {
+    code: 'OTH', label: 'Science & Society', icon: '🔭', color: 'var(--domain-others)',
+    subdomains: [
+      { code: 'SCI', label: 'General Science' },
+      { code: 'HEA', label: 'Health & Medicine' },
+      { code: 'EDU', label: 'Education & Research' },
+      { code: 'GAM', label: 'Gaming & Interactive Media' },
+    ],
+  },
+];
 
-export const SUBCATEGORY_LABELS = {
-  EXE: 'Executive',
-  LEG: 'Legislative',
-  JUD: 'Judiciary',
-  GEO: 'Geopolitics',
-  MAC: 'Macroeconomics',
-  MIC: 'Microeconomics',
-  INV: 'Investments',
-  MON: 'Monetary Policy',
-  TRD: 'Trade & Global Economy',
-  SCA: 'Startups & Corporate Activity',
-  MID: 'Markets & Industry Dynamics',
-  SAI: 'Software & AI',
-  PHY: 'Science – Physics',
-  BIO: 'Biotechnology',
-  ROB: 'Robotics',
-  DEF: 'Defence & Weapon Technologies',
-  SPC: 'Space',
-  NMI: 'Nano & Material Innovation',
-  EHW: 'Electronics & Hardware',
-  OTH: 'Others',
-};
+// Flat subdomain label map (code → label) — includes both domains and subdomains
+export const SUBCATEGORY_LABELS = Object.fromEntries([
+  ...INTEREST_TREE.map(d => [d.code, d.label]),
+  ...INTEREST_TREE.flatMap(d => d.subdomains.map(s => [s.code, s.label])),
+]);
+
+// Legacy flat maps (kept for backward compatibility with existing components)
+export const SUBCATEGORY_CODES = Object.fromEntries(
+  INTEREST_TREE.map(d => [d.code, d.subdomains.map(s => s.code)])
+);

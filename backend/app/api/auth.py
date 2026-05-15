@@ -47,8 +47,8 @@ def update_interests(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    valid_domains = {"POL", "ECO", "BUS", "TEC", "OTH"}
-    current_user.interests = [d for d in payload.interests if d in valid_domains]
+    from app.services.interests_config import VALID_INTEREST_CODES
+    current_user.interests = [code for code in payload.interests if code in VALID_INTEREST_CODES]
     db.commit()
     db.refresh(current_user)
     return current_user
