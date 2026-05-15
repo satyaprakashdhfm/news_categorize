@@ -689,6 +689,7 @@ async def _fetch_reddit_global_search(
     limit: int = 25,
     client=None,
     trace_id: str = None,
+    search_query: str = None,
 ) -> tuple[list[BlogItem], dict[str, int]]:
     """Search all of Reddit by query — relevant for any topic, no subreddit selection needed."""
     import aiohttp
@@ -696,7 +697,8 @@ async def _fetch_reddit_global_search(
     _proxy, _proxy_auth = _parse_proxy(settings.REDDIT_PROXY_URL or "")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     kw = list(_tokenize_meaningful(query))
-    short_query = " ".join(kw[:6]) if kw else " ".join(query.split()[:6])
+    # Use caller-supplied search_query if given (pre-built with year/context)
+    short_query = search_query if search_query else (" ".join(kw[:6]) if kw else " ".join(query.split()[:6]))
 
     posts_data: list[dict] = []
     async with aiohttp.ClientSession(headers=headers) as session:
@@ -1155,27 +1157,39 @@ async def run_live_browser_stream(
                 yield emit("step", "Extracting keywords from query...")
                 _kw = list(_tokenize_meaningful(query))
                 _search_str = " ".join(_kw[:6]) if _kw else query
-                # Build YouTube query: keep original words from query that imply
-                # news/updates intent; always add current year for freshness
-                _news_intent = {"update", "updates", "news", "latest", "recent", "current"}
+                _news_intent = {"update", "updates", "news", "latest", "recent", "current", "today"}
                 _query_words = set(query.lower().split())
+                _has_news_intent = bool(_query_words & _news_intent)
                 _year = datetime.now().year
-                if _query_words & _news_intent:
-                    # User already said "updates/news/latest" — just add year
+
+                # ── Per-source optimised queries ───────────────────────────
+                # YouTube: sort-by-date already set; add year to avoid tutorials.
+                # If user expressed news intent ("updates/latest") just add year;
+                # otherwise also add "news" so YouTube surfaces current events.
+                if _has_news_intent:
                     yt_query: str = f"{_search_str} {_year}"
                 else:
-                    # No explicit news intent — add "news" + year so YouTube
-                    # surfaces current events rather than tutorials/evergreen content
                     yt_query: str = f"{_search_str} news {_year}"
+
+                # Reddit: natural-language search works well; add year so recent
+                # threads rank higher than old evergreen discussion posts.
+                reddit_query: str = f"{_search_str} {_year}"
+
+                # News (Bing RSS + Google RSS): already date-filtered at source
+                # (interval=3 / when:2d), so keep query clean — just keywords.
                 news_query: str = _search_str
-                yield emit("step", f"Keywords: {_search_str}")
+
+                # Twitter: add year for recency, same rationale as Reddit.
+                twitter_query: str = f"{_search_str} {_year}"
+
+                yield emit("step", f"Keywords: {_search_str} | year: {_year}")
 
                 sem = asyncio.Semaphore(5)
 
                 # ── PHASE 1: Reddit direct search (no community selection) ──
-                yield emit("step", f"Searching Reddit directly: '{_search_str}' (past 24h → week fallback)...")
+                yield emit("step", f"Searching Reddit: '{reddit_query}'...")
                 reddit_blogs, reddit_usage = await _fetch_reddit_global_search(
-                    query, limit=25, client=_sum_client
+                    query, limit=25, client=_sum_client, search_query=reddit_query
                 )
                 _merge_usage(usage_totals, reddit_usage)
                 yield emit("step", f"  → {len(reddit_blogs)} posts from Reddit")
@@ -1348,8 +1362,8 @@ async def run_live_browser_stream(
                 # ── PHASE 3c: Twitter/X — Nitter HTML (Playwright) → Twitter direct fallback ──
                 twitter_blogs: list[BlogItem] = []
                 try:
-                    _tw_query_enc = quote_plus(news_query)
-                    yield emit("step", f"Twitter/X search: '{news_query}'")
+                    _tw_query_enc = quote_plus(twitter_query)
+                    yield emit("step", f"Twitter/X search: '{twitter_query}'")
                     tw_raw = []
 
                     # --- Attempt 1: Nitter HTML instances via Playwright ---
