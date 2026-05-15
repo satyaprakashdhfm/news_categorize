@@ -1394,6 +1394,39 @@ def get_card_all_items(card_id: str, db: Session = Depends(get_db)):
     return {"items": items_out, "total": len(items_out), "run_count": len(run_rows)}
 
 
+@router.get("/card/{card_id}/runs")
+def get_card_runs(card_id: str, db: Session = Depends(get_db)):
+    """Return all runs for a card, newest first, each with its complete item list (no cross-run dedup)."""
+    from sqlalchemy import text
+    try:
+        run_rows = db.execute(
+            text("SELECT run_id, generated_at, query FROM browser_research_runs WHERE card_id = :cid ORDER BY generated_at DESC"),
+            {"cid": card_id},
+        ).fetchall()
+    except Exception:
+        return {"runs": []}
+
+    runs_out = []
+    for rr in run_rows:
+        run_id, generated_at, query = rr[0], rr[1], rr[2]
+        item_rows = db.query(BrowserResearchItem).filter(BrowserResearchItem.run_id == run_id).all()
+        runs_out.append({
+            "run_id": run_id,
+            "generated_at": generated_at.isoformat() if generated_at else None,
+            "query": query or "",
+            "item_count": len(item_rows),
+            "items": [
+                {
+                    "source": i.source, "title": i.title, "summary": i.summary, "url": i.url,
+                    "community": i.community, "channel": i.channel, "author": i.author,
+                    "score": i.score, "comments": i.comments, "published_at": i.published_at,
+                }
+                for i in item_rows
+            ],
+        })
+    return {"runs": runs_out}
+
+
 @router.get("/history/{run_id}", response_model=BrowserResearchResponse)
 def get_browser_research_run(run_id: str, db: Session = Depends(get_db)):
     run_row = db.query(BrowserResearchRun).filter(BrowserResearchRun.run_id == run_id).first()

@@ -108,6 +108,8 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
   const [rerunStatus, setRerunStatus] = useState('idle'); // idle | running | done | error
   const [rerunLog, setRerunLog] = useState([]);
   const rerunAbort = useRef(null);
+  const [pastRuns, setPastRuns] = useState([]);
+  const [expandedRun, setExpandedRun] = useState(null);
 
   const handleRerun = async () => {
     if (!card || rerunStatus === 'running') return;
@@ -156,20 +158,19 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
 
       if (runId) {
         await feedCardsApi.attachRun({ run_id: runId, card_id: card.id, query: card.title, title: card.title, domain: card.domain, subdomain: card.subdomain });
-        // Load all accumulated items across all runs for this card
+        // Reload latest run items + history
         try {
-          const allData = await browserResearchApi.getCardItems(card.id);
-          if (allData.items && allData.items.length > 0) {
-            setItems(allData.items);
-          } else {
-            const runData = await browserResearchApi.getRun(runId);
-            setItems(runData.blogs || []);
-          }
+          const runData = await browserResearchApi.getRun(runId);
+          setItems(runData.blogs || []);
           setItemType('browser');
           setSourceFilter('all');
           setVisibleCount(PAGE_SIZE);
           setTextSearch('');
-        } catch { /* items may already be visible from SSE */ }
+        } catch { /* items may already be visible */ }
+        try {
+          const runsData = await browserResearchApi.getCardRuns(card.id);
+          setPastRuns((runsData.runs || []).slice(1));
+        } catch { }
         // Refresh card metadata in background (non-blocking)
         feedCardsApi.getCard(cardId).then(setCard).catch(() => {});
         setRerunStatus('done');
@@ -213,21 +214,21 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
           setItems(runData.blogs || []); setItemType('browser');
         } else { setItems([]); setItemType('article'); }
       } else {
-        // Custom card — load all items across all runs (accumulated history), fall back to latest run
+        // Custom card — main view: latest run's full item list (no cross-run dedup)
+        if (card.run_id) {
+          try {
+            const runData = await browserResearchApi.getRun(card.run_id);
+            setItems(runData.blogs || []);
+          } catch { setItems([]); }
+        } else { setItems([]); }
+        setItemType('browser');
+        // Load history: all runs grouped (past runs shown in accordion below)
         try {
-          const res = await browserResearchApi.getCardItems(card.id);
-          if (res.items && res.items.length > 0) {
-            setItems(res.items); setItemType('browser');
-          } else if (card.run_id) {
-            const runData = await browserResearchApi.getRun(card.run_id);
-            setItems(runData.blogs || []); setItemType('browser');
-          } else { setItems([]); setItemType('browser'); }
-        } catch {
-          if (card.run_id) {
-            const runData = await browserResearchApi.getRun(card.run_id);
-            setItems(runData.blogs || []); setItemType('browser');
-          } else { setItems([]); setItemType('browser'); }
-        }
+          const runsData = await browserResearchApi.getCardRuns(card.id);
+          const allRuns = runsData.runs || [];
+          // First run is the latest (already shown above); rest go to history
+          setPastRuns(allRuns.slice(1));
+        } catch { setPastRuns([]); }
       }
     } catch { setError('Failed to load items.'); setItems([]); }
     finally { setLoading(false); }
@@ -491,6 +492,56 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Research History — past runs, each collapsible, full item list per run */}
+        {pastRuns.length > 0 && itemType === 'browser' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-3)', padding: '4px 0', letterSpacing: '0.03em', textTransform: 'uppercase' }}>
+              Research History &middot; {pastRuns.length} past run{pastRuns.length !== 1 ? 's' : ''}
+            </div>
+            {pastRuns.map((run) => (
+              <div key={run.run_id} style={{ background: 'var(--bg-1)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
+                <button
+                  onClick={() => setExpandedRun(expandedRun === run.run_id ? null : run.run_id)}
+                  style={{
+                    width: '100%', padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 10,
+                    background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+                    style={{ transform: expandedRun === run.run_id ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0, color: 'var(--fg-4)' }}>
+                    <path d="M3 2L7 5L3 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--fg-2)' }}>
+                    {formatTimeAgo(run.generated_at)}
+                  </span>
+                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--fg-4)' }}>
+                    {run.item_count} items
+                  </span>
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                    {['reddit','youtube','news'].map((src) => {
+                      const cnt = run.items.filter(i => i.source === src).length;
+                      if (!cnt) return null;
+                      const c = SOURCE_COLORS[src] || { bg: 'var(--bg-2)', color: 'var(--fg-3)' };
+                      return (
+                        <span key={src} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', padding: '1px 6px', borderRadius: 'var(--r-sm)', background: c.bg, color: c.color }}>
+                          {src} {cnt}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </button>
+                {expandedRun === run.run_id && (
+                  <div style={{ borderTop: '1px solid var(--line-1)' }}>
+                    {run.items.map((item, idx) => (
+                      <BrowserItem key={`${item.url}-${idx}`} item={item} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </main>
