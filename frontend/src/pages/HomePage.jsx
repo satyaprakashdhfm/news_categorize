@@ -56,7 +56,7 @@ function UserStatsWidget({ stats }) {
           <circle cx="6" cy="4" r="2" stroke="currentColor" strokeWidth="1.3"/>
           <path d="M2 10 Q2 7 6 7 Q10 7 10 10" stroke="currentColor" strokeWidth="1.3"/>
         </svg>
-        Members
+        Users
       </span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span className="metric__val">
