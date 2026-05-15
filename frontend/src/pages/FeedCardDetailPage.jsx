@@ -101,7 +101,7 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
   const [error, setError] = useState('');
   const [itemType, setItemType] = useState('article');
   const [country, setCountry] = useState('');
-  const [timeFilter, setTimeFilter] = useState('today');
+  const [timeFilter, setTimeFilter] = useState('6');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [textSearch, setTextSearch] = useState('');
@@ -236,7 +236,10 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
   useEffect(() => { if (card) loadItems(); }, [card, loadItems]);
 
   const filteredItems = items.filter((i) => {
-    if (card?.type === 'custom' && sourceFilter !== 'all' && i.source !== sourceFilter) return false;
+    if (sourceFilter !== 'all') {
+      const itemSource = i.source || 'news';
+      if (itemSource !== sourceFilter) return false;
+    }
     if (textSearch) {
       const q = textSearch.toLowerCase();
       const title = (i.title || i.headline || '').toLowerCase();
@@ -400,7 +403,7 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
             {/* Time filter for domain cards */}
             {card.type === 'domain' && itemType === 'article' && (
               <div style={{ display: 'flex', gap: 2 }}>
-                {[['today', 'Today'], ['24', '24h'], ['48', '48h'], ['168', '7d']].map(([v, l]) => (
+                {[['6', '6h'], ['today', 'Today'], ['24', '24h'], ['48', '48h'], ['168', '7d']].map(([v, l]) => (
                   <button key={v} onClick={() => setTimeFilter(v)}
                     className={`tchip ${timeFilter === v ? 'is-on' : ''}`}>
                     {l}
@@ -422,22 +425,22 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
               </select>
             )}
 
-            {/* Source filter for custom/browser cards */}
-            {(card.type === 'custom' || itemType === 'browser') && (
-              <div style={{ display: 'flex', gap: 2 }}>
-                {['all', 'reddit', 'youtube', 'news'].map((src) => {
-                  const count = src === 'all' ? items.length : (sourceCounts[src] || 0);
-                  return (
-                    <button key={src} onClick={() => setSourceFilter(src)}
-                      className={`fchip ${sourceFilter === src ? 'is-on' : ''}`}
-                      style={{ textTransform: 'capitalize', fontSize: 'var(--t-micro)', fontWeight: 600 }}>
-                      {src}
-                      {count > 0 && <span className="mono" style={{ fontSize: 10, opacity: 0.7, marginLeft: 4 }}>{count}</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            {/* Source filter — always visible */}
+            <div style={{ display: 'flex', gap: 2 }}>
+              {['all', 'reddit', 'youtube', 'news'].map((src) => {
+                const count = src === 'all'
+                  ? items.length
+                  : items.filter(i => (i.source || 'news') === src).length;
+                return (
+                  <button key={src} onClick={() => setSourceFilter(src)}
+                    className={`fchip ${sourceFilter === src ? 'is-on' : ''}`}
+                    style={{ textTransform: 'capitalize', fontSize: 'var(--t-micro)', fontWeight: 600 }}>
+                    {src}
+                    {count > 0 && <span className="mono" style={{ fontSize: 10, opacity: 0.7, marginLeft: 4 }}>{count}</span>}
+                  </button>
+                );
+              })}
+            </div>
 
             <span className="meta" style={{ marginLeft: 'auto' }}>{filteredItems.length}</span>
             <button className="iconbtn" onClick={loadItems} title="Refresh" style={{ width: 28, height: 28 }}>
@@ -459,7 +462,7 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
         ) : filteredItems.length === 0 ? (
           <div className="empty">
             <p className="empty__text">No items for the selected filters.</p>
-            {timeFilter === 'today' && card?.type === 'domain' && (
+            {(timeFilter === '6' || timeFilter === 'today') && card?.type === 'domain' && (
               <button onClick={() => setTimeFilter('24')} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--t-meta)', fontWeight: 500 }}>
                 Try last 24h instead →
               </button>

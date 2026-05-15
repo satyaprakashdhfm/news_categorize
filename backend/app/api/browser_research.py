@@ -626,13 +626,13 @@ async def _fetch_reddit_posts_for_community(
 
 async def _fetch_reddit_global_search(
     query: str,
-    limit: int = 20,
+    limit: int = 25,
     client=None,
     trace_id: str = None,
 ) -> tuple[list[BlogItem], dict[str, int]]:
     """Search all of Reddit by query — relevant for any topic, no subreddit selection needed."""
     import aiohttp
-    safe_limit = min(max(limit, 1), 25)
+    safe_limit = min(max(limit, 1), 30)
     _proxy, _proxy_auth = _parse_proxy(settings.REDDIT_PROXY_URL or "")
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     kw = list(_tokenize_meaningful(query))
@@ -640,10 +640,11 @@ async def _fetch_reddit_global_search(
 
     posts_data: list[dict] = []
     async with aiohttp.ClientSession(headers=headers) as session:
+        # Try past 24h top posts first for maximum recency
         try:
             async with session.get(
                 "https://www.reddit.com/search.json",
-                params={"q": short_query, "sort": "top", "t": "week", "limit": str(safe_limit * 2), "type": "link"},
+                params={"q": short_query, "sort": "top", "t": "day", "limit": str(safe_limit * 2), "type": "link"},
                 timeout=aiohttp.ClientTimeout(total=20),
                 proxy=_proxy,
                 proxy_auth=_proxy_auth,
@@ -654,6 +655,23 @@ async def _fetch_reddit_global_search(
         except Exception:
             pass
 
+        # Fallback: past week top posts
+        if not posts_data:
+            try:
+                async with session.get(
+                    "https://www.reddit.com/search.json",
+                    params={"q": short_query, "sort": "top", "t": "week", "limit": str(safe_limit * 2), "type": "link"},
+                    timeout=aiohttp.ClientTimeout(total=20),
+                    proxy=_proxy,
+                    proxy_auth=_proxy_auth,
+                ) as resp:
+                    if resp.status == 200:
+                        payload = await resp.json()
+                        posts_data = [n["data"] for n in ((payload.get("data") or {}).get("children") or []) if n.get("data")]
+            except Exception:
+                pass
+
+        # Last resort: newest posts past month
         if not posts_data:
             try:
                 async with session.get(
@@ -1027,19 +1045,29 @@ async def run_live_browser_stream(
                     viewport={"width": 1280, "height": 760},
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 )
-                _reddit_proxy_url = settings.REDDIT_PROXY_URL
-                _reddit_proxy_cfg: dict | None = None
-                if _reddit_proxy_url:
-                    from urllib.parse import urlparse as _urlparse
-                    _p = _urlparse(_reddit_proxy_url)
-                    _reddit_proxy_cfg = {
-                        "server": f"{_p.scheme}://{_p.hostname}:{_p.port}",
-                        "username": _p.username,
-                        "password": _p.password,
-                    }
-                # Reddit phase uses proxy context; YouTube/News uses a clean context
-                _reddit_ctx = await browser.new_context(proxy=_reddit_proxy_cfg, **_ctx_kwargs) if _reddit_proxy_cfg else await browser.new_context(**_ctx_kwargs)
-                page = await _reddit_ctx.new_page()
+
+                # Extract meaningful keywords for YouTube / News search
+                yield emit("step", "Extracting keywords from query...")
+                _kw = list(_tokenize_meaningful(query))
+                _search_str = " ".join(_kw[:6]) if _kw else query
+                yt_query: str = _search_str
+                news_query: str = _search_str
+                yield emit("step", f"Keywords: {_search_str}")
+
+                sem = asyncio.Semaphore(5)
+
+                # ── PHASE 1: Reddit direct search (no community selection) ──
+                yield emit("step", f"Searching Reddit directly: '{_search_str}' (past 24h → week fallback)...")
+                reddit_blogs, reddit_usage = await _fetch_reddit_global_search(
+                    query, limit=25, client=_sum_client
+                )
+                _merge_usage(usage_totals, reddit_usage)
+                yield emit("step", f"  → {len(reddit_blogs)} posts from Reddit")
+
+                # Launch browser for YouTube + News phases
+                yield emit("step", "Launching browser for YouTube + News...")
+                _clean_ctx = await browser.new_context(**_ctx_kwargs)
+                page = await _clean_ctx.new_page()
 
                 async def snap() -> str:
                     png = await page.screenshot(type="jpeg", quality=55, full_page=False)
@@ -1055,62 +1083,6 @@ async def run_live_browser_stream(
                         logger.warning(f"[BROWSER] nav failed {url}: {e}")
                     return events
 
-                # ── CALL 1: LLM plans full strategy + picks subreddits ────
-                # ── Keyword-based planning (no LLM — reliable across all models) ──
-                # llama3.2:1b cannot follow complex JSON+rules prompts, so we derive
-                # subreddits and search queries from the query text directly.
-                yield emit("step", "Planning research strategy from query keywords...")
-                subreddit_plan = _topic_aware_communities(query, 5)
-
-                # Build search queries from meaningful keywords in the query
-                _kw = list(_tokenize_meaningful(query))
-                _search_str = " ".join(_kw[:6]) if _kw else query
-                yt_query: str = _search_str
-                news_query: str = _search_str
-                yield emit("step", f"Keywords: {_search_str}")
-
-                # ── Discover communities from reddit.com/explore ───────────
-                yield emit("step", "Browsing reddit.com/explore to discover real communities...")
-                for ev in await nav("https://www.reddit.com/explore/", t=30000):
-                    yield ev
-
-                explored_subs = await page.evaluate("""
-                    () => {
-                        const names = new Set();
-                        // subreddit links on explore page
-                        document.querySelectorAll('a[href^="/r/"]').forEach(a => {
-                            const m = a.href.match(/\\/r\\/([A-Za-z0-9_]+)/);
-                            if (m) names.add(m[1]);
-                        });
-                        return [...names].filter(n =>
-                            !['all','popular','random','friends','mod','nosleep'].includes(n.toLowerCase())
-                        ).slice(0, 40);
-                    }
-                """)
-                yield emit("step", f"  → Found {len(explored_subs)} communities on explore page")
-
-                subreddits: list[str] = subreddit_plan[:5]
-
-                unique_subs = subreddit_plan
-                sem = asyncio.Semaphore(5)
-
-                # ── PHASE 1: Reddit global search (query-first, no subreddit picking) ──
-                # Searching all of Reddit by query is more accurate than picking subreddits
-                # and fetching their hot/top posts (which are often off-topic).
-                yield emit("step", f"Reddit search: '{_search_str}' (past week)...")
-                reddit_blogs, reddit_usage = await _fetch_reddit_global_search(
-                    query, limit=20, client=_sum_client
-                )
-                _merge_usage(usage_totals, reddit_usage)
-                yield emit("step", f"  → {len(reddit_blogs)} posts from Reddit search")
-
-                # Switch to a clean context (no proxy) for YouTube + News
-                yield emit("step", "Closing Reddit context, opening clean browser context...")
-                await _reddit_ctx.close()
-                _clean_ctx = await browser.new_context(**_ctx_kwargs)
-                page = await _clean_ctx.new_page()
-                yield emit("step", "Browser context ready for YouTube + News")
-
                 # ── PHASE 2: YouTube search ────────────────────────────────
                 youtube_blogs: list[BlogItem] = []
                 try:
@@ -1123,37 +1095,41 @@ async def run_live_browser_stream(
 
                     videos_raw = await page.evaluate("""
                         () => {
-                            const RECENT_PATTERNS = [
-                                /\\d+ (second|minute|hour|day|week)s? ago/i,
-                                /\\d+ (month)s? ago/i,
-                                /streamed \\d+/i,
-                            ];
-                            const OLD_PATTERNS = [
-                                /\\d+ years? ago/i,
-                                /[2-9] months? ago/i,
-                            ];
+                            // Tier 0: today / hours / 1-2 days ago
+                            const FRESH = /\\d+ (second|minute|hour)s? ago|^1 day ago|^2 days? ago/i;
+                            // Tier 1: this week (3-7 days)
+                            const THIS_WEEK = /[3-7] days? ago/i;
+                            // Skip: weeks / months / years old
+                            const SKIP = /\\d+ (week|month|year)s? ago/i;
+
                             const items = [];
                             document.querySelectorAll('ytd-video-renderer').forEach(el => {
                                 const titleEl = el.querySelector('a#video-title');
                                 const channelEl = el.querySelector('ytd-channel-name a, #channel-name a');
                                 const spans = el.querySelectorAll('#metadata-line span');
-                                if (titleEl) {
-                                    const href = titleEl.getAttribute('href') || '';
-                                    const title = (titleEl.getAttribute('title') || titleEl.textContent || '').trim();
-                                    const metaText = [...spans].map(s=>s.textContent.trim()).join(' | ');
-                                    if (OLD_PATTERNS.some(p => p.test(metaText))) return;
-                                    if (title) items.push({
-                                        title,
-                                        url: href.startsWith('http') ? href : 'https://www.youtube.com' + href,
-                                        channel: channelEl?.textContent.trim() || '',
-                                        description: el.querySelector('#description-text')?.textContent.trim() || '',
-                                        meta: metaText,
-                                        isRecent: RECENT_PATTERNS.some(p => p.test(metaText)),
-                                    });
-                                }
+                                if (!titleEl) return;
+                                const href = titleEl.getAttribute('href') || '';
+                                const title = (titleEl.getAttribute('title') || titleEl.textContent || '').trim();
+                                const metaText = [...spans].map(s=>s.textContent.trim()).join(' | ');
+                                if (!title || !href.includes('watch')) return;
+                                if (SKIP.test(metaText)) return;
+                                items.push({
+                                    title,
+                                    url: href.startsWith('http') ? href : 'https://www.youtube.com' + href,
+                                    channel: channelEl?.textContent.trim() || '',
+                                    description: el.querySelector('#description-text')?.textContent.trim() || '',
+                                    meta: metaText,
+                                    tier: FRESH.test(metaText) ? 0 : THIS_WEEK.test(metaText) ? 1 : 2,
+                                });
                             });
-                            items.sort((a, b) => (b.isRecent ? 1 : 0) - (a.isRecent ? 1 : 0));
-                            return items.filter(v => v.title && v.url.includes('watch')).slice(0, 12);
+
+                            // Sort: freshest first
+                            items.sort((a, b) => a.tier - b.tier);
+                            // Return fresh (tier 0-1) only; if < 3 found, fill with tier-2 backup
+                            const primary = items.filter(v => v.tier <= 1);
+                            const backup = items.filter(v => v.tier === 2);
+                            const fill = primary.length < 3 ? backup.slice(0, 4 - primary.length) : [];
+                            return [...primary, ...fill].slice(0, 8);
                         }
                     """)
                     yield emit("step", f"  → {len(videos_raw)} YouTube videos found")
@@ -1176,8 +1152,8 @@ async def run_live_browser_stream(
                 # ── PHASE 3: News via Bing News ───────────────────────────────
                 news_blogs: list[BlogItem] = []
                 try:
-                    bing_news_url = f"https://www.bing.com/news/search?q={quote_plus(news_query)}&qft=interval%3d%228%22&form=PTFTNR"
-                    yield emit("step", f"Bing News (past week): '{news_query}'")
+                    bing_news_url = f"https://www.bing.com/news/search?q={quote_plus(news_query)}&qft=interval%3d%223%22&sortby=Date&form=PTFTNR"
+                    yield emit("step", f"Bing News (past day): '{news_query}'")
                     for ev in await nav(bing_news_url, t=30000):
                         yield ev
                     yield emit("step", "Bing News page loaded, extracting articles...")
@@ -1221,7 +1197,7 @@ async def run_live_browser_stream(
                     import aiohttp as _aiohttp
                     import xml.etree.ElementTree as _ET
                     import re as _re
-                    gnews_rss = f"https://news.google.com/rss/search?q={quote_plus(news_query)}+when:7d&hl=en-US&gl=US&ceid=US:en"
+                    gnews_rss = f"https://news.google.com/rss/search?q={quote_plus(news_query)}+when:2d&hl=en-US&gl=US&ceid=US:en"
                     yield emit("step", f"Google News RSS: '{news_query}'")
                     async with _aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as _sess:
                         async with _sess.get(gnews_rss, timeout=_aiohttp.ClientTimeout(total=15)) as _resp:
@@ -1267,7 +1243,7 @@ async def run_live_browser_stream(
 
                 run_row = BrowserResearchRun(
                     run_id=run_id, query=query,
-                    selected_reddit_communities=json.dumps(unique_subs, ensure_ascii=True),
+                    selected_reddit_communities=json.dumps([], ensure_ascii=True),
                     youtube_channels_used=json.dumps(request.hint_channels, ensure_ascii=True),
                     total_blogs=len(blogs),
                     created_by=current_user.id if current_user else None,
@@ -1289,7 +1265,7 @@ async def run_live_browser_stream(
                 yield emit("step", f"Done! {len(blogs)} results | {usage_schema.calls} LLM calls | ${usage_schema.estimated_cost_usd:.5f}")
                 result = BrowserResearchResponse(
                     run_id=run_id, query=query,
-                    selected_reddit_communities=unique_subs,
+                    selected_reddit_communities=[],
                     youtube_channels_used=request.hint_channels,
                     total_blogs=len(blogs), generated_at=datetime.now(),
                     llm_usage=usage_schema, blogs=blogs,

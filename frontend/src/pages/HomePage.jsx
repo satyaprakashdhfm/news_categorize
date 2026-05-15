@@ -280,7 +280,7 @@ export default function HomePage({ isDark, toggleDark }) {
   const [activeTab, setActiveTab] = useState('global');
   const [domain, setDomain] = useState('');
   const [subdomain, setSubdomain] = useState('');
-  const [hoursBack, setHoursBack] = useState('');
+  const [hoursBack, setHoursBack] = useState('6');
 
   const [globalCards, setGlobalCards] = useState([]);
   const [globalLoading, setGlobalLoading] = useState(false);
