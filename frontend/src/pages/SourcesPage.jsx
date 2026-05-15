@@ -338,6 +338,7 @@ export default function SourcesPage({ isDark, toggleDark }) {
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [domain, setDomain] = useState('all');
+  const [sourceType, setSourceType] = useState('all');
   const [sort, setSort] = useState('hot');
   const [showAdd, setShowAdd] = useState(false);
   const [editSrc, setEditSrc] = useState(null);
@@ -345,12 +346,16 @@ export default function SourcesPage({ isDark, toggleDark }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await sourcesApi.list({ domain: domain === 'all' ? undefined : domain, sort });
+      const data = await sourcesApi.list({
+        domain: domain === 'all' ? undefined : domain,
+        source_type: sourceType === 'all' ? undefined : sourceType,
+        sort,
+      });
       setSources(data.sources || []);
     } finally {
       setLoading(false);
     }
-  }, [domain, sort]);
+  }, [domain, sourceType, sort]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -398,43 +403,63 @@ export default function SourcesPage({ isDark, toggleDark }) {
         </div>
 
         {/* Filters */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-          {/* Domain tabs — top-level only, clicking shows all subdomains too */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {['all', ...INTEREST_TREE.map(d => d.code)].map(d => {
-              const col = d !== 'all' ? TOP_COLORS[d] : null;
-              const active = domain === d;
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+          {/* Row 1: Domain + Sort */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {['all', ...INTEREST_TREE.map(d => d.code)].map(d => {
+                const col = d !== 'all' ? TOP_COLORS[d] : null;
+                const active = domain === d;
+                return (
+                  <button key={d} onClick={() => setDomain(d)}
+                    style={{
+                      padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid',
+                      borderColor: active ? (col?.color || 'var(--fg-1)') : 'var(--line-1)',
+                      background: active ? (col?.bg || 'var(--bg-2)') : 'transparent',
+                      color: active ? (col?.color || 'var(--fg-1)') : 'var(--fg-3)',
+                      transition: 'all 0.15s',
+                    }}>
+                    {d === 'all' ? 'All Topics' : getLabel(d)}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {['hot', 'new'].map(s => (
+                <button key={s} onClick={() => setSort(s)}
+                  style={{ padding: '4px 12px', borderRadius: 'var(--r-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--line-1)', background: sort === s ? 'var(--bg-2)' : 'transparent', color: sort === s ? 'var(--fg-1)' : 'var(--fg-4)' }}>
+                  {s === 'hot' ? 'Hot' : 'New'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Row 2: Source type filter */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Type</span>
+            {[
+              { key: 'all',     label: 'All',      icon: null },
+              { key: 'web',     label: 'Website',  icon: TYPE_META.web.icon,     color: TYPE_META.web.color },
+              { key: 'youtube', label: 'YouTube',  icon: TYPE_META.youtube.icon,  color: TYPE_META.youtube.color },
+              { key: 'twitter', label: 'X / Twitter', icon: TYPE_META.twitter.icon, color: TYPE_META.twitter.color },
+              { key: 'reddit',  label: 'Reddit',   icon: TYPE_META.reddit.icon,  color: TYPE_META.reddit.color },
+            ].map(({ key, label, icon, color }) => {
+              const active = sourceType === key;
               return (
-                <button key={d} onClick={() => setDomain(d)}
+                <button key={key} onClick={() => setSourceType(key)}
                   style={{
-                    padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid',
-                    borderColor: active ? (col?.color || 'var(--fg-1)') : 'var(--line-1)',
-                    background: active ? (col?.bg || 'var(--bg-2)') : 'transparent',
-                    color: active ? (col?.color || 'var(--fg-1)') : 'var(--fg-3)',
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    padding: '3px 11px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid',
+                    borderColor: active ? (color || 'var(--fg-1)') : 'var(--line-1)',
+                    background: active ? (color ? `${color}18` : 'var(--bg-2)') : 'transparent',
+                    color: active ? (color || 'var(--fg-1)') : 'var(--fg-3)',
                     transition: 'all 0.15s',
                   }}>
-                  {d === 'all' ? 'All' : getLabel(d)}
+                  {icon && <span style={{ display: 'flex', alignItems: 'center' }}>{icon}</span>}
+                  {label}
                 </button>
               );
             })}
-          </div>
-
-          {/* Sort */}
-          <div style={{ display: 'flex', gap: 4 }}>
-            {['hot', 'new'].map(s => (
-              <button
-                key={s}
-                onClick={() => setSort(s)}
-                style={{
-                  padding: '4px 12px', borderRadius: 'var(--r-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  border: '1px solid var(--line-1)',
-                  background: sort === s ? 'var(--bg-2)' : 'transparent',
-                  color: sort === s ? 'var(--fg-1)' : 'var(--fg-4)',
-                }}
-              >
-                {s === 'hot' ? 'Hot' : 'New'}
-              </button>
-            ))}
           </div>
         </div>
 

@@ -155,6 +155,7 @@ def _build_score_query(db: Session):
 @router.get("")
 def list_sources(
     domain: Optional[str] = Query(None),
+    source_type: Optional[str] = Query(None),
     sort: str = Query("hot"),
     db: Session = Depends(get_db),
     current_user=Depends(get_optional_user),
@@ -172,11 +173,13 @@ def list_sources(
     )
 
     if domain and domain != "all":
-        # If top-level code, include all its subdomains too
         if domain in DOMAIN_TREE:
             q = q.filter(Source.domain.in_([domain] + DOMAIN_TREE[domain]))
         else:
             q = q.filter(Source.domain == domain)
+
+    if source_type and source_type != "all":
+        q = q.filter(Source.source_type == source_type)
 
     if sort == "new":
         q = q.order_by(Source.created_at.desc())
