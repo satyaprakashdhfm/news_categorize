@@ -81,6 +81,7 @@ export const browserResearchApi = {
   run: (data, config = {}) => api.post('/browser-research/run', data, config).then((r) => r.data),
   getHistory: (params = {}) => api.get('/browser-research/history', { params }).then((r) => r.data),
   getRun: (runId) => api.get(`/browser-research/history/${runId}`).then((r) => r.data),
+  getCardItems: (cardId) => api.get(`/browser-research/card/${cardId}/items`).then((r) => r.data),
 };
 
 // ── Hacker News ───────────────────────────────────────────────────────────────

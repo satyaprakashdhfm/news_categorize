@@ -1360,6 +1360,49 @@ def get_browser_research_history(
     )
 
 
+@router.get("/card/{card_id}/items")
+def get_card_all_items(card_id: str, db: Session = Depends(get_db)):
+    """Return all items across all runs for a card, deduped by URL, newest runs first."""
+    runs = (
+        db.query(BrowserResearchRun)
+        .filter(BrowserResearchRun.card_id == card_id)
+        .order_by(BrowserResearchRun.generated_at.desc())
+        .all()
+    )
+    if not runs:
+        return {"items": [], "total": 0, "run_count": 0}
+
+    seen_urls: set[str] = set()
+    items_out = []
+    for run in runs:
+        rows = (
+            db.query(BrowserResearchItem)
+            .filter(BrowserResearchItem.run_id == run.run_id)
+            .all()
+        )
+        for row in rows:
+            if row.url and row.url in seen_urls:
+                continue
+            if row.url:
+                seen_urls.add(row.url)
+            items_out.append({
+                "source": row.source,
+                "title": row.title,
+                "summary": row.summary,
+                "url": row.url,
+                "community": row.community,
+                "channel": row.channel,
+                "author": row.author,
+                "score": row.score,
+                "comments": row.comments,
+                "published_at": row.published_at,
+                "run_id": run.run_id,
+                "run_date": run.generated_at.isoformat() if run.generated_at else None,
+            })
+
+    return {"items": items_out, "total": len(items_out), "run_count": len(runs)}
+
+
 @router.get("/history/{run_id}", response_model=BrowserResearchResponse)
 def get_browser_research_run(run_id: str, db: Session = Depends(get_db)):
     run_row = db.query(BrowserResearchRun).filter(BrowserResearchRun.run_id == run_id).first()

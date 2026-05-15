@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user, get_optional_user
 from app.models.feed_card import FeedCard, UserFeedCard
+from app.models.browser_research_run import BrowserResearchRun
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -440,11 +441,18 @@ def attach_run(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
 ):
+    def _stamp_run(run_id: str, card_id: str) -> None:
+        """Back-fill card_id on the run row so we can query all runs for a card."""
+        run = db.query(BrowserResearchRun).filter(BrowserResearchRun.run_id == run_id).first()
+        if run and not run.card_id:
+            run.card_id = card_id
+
     # Priority: if caller knows the exact card to update, skip all matching logic
     if payload.card_id:
         target = db.query(FeedCard).filter(FeedCard.id == payload.card_id).first()
         if target:
             target.run_id = payload.run_id
+            _stamp_run(payload.run_id, target.id)
             db.commit()
             return AttachRunResponse(merged=True, card_id=target.id, message="Updated card run_id directly")
 
@@ -461,6 +469,7 @@ def attach_run(
         )
         if domain_card:
             domain_card.run_id = payload.run_id
+            _stamp_run(payload.run_id, domain_card.id)
             db.commit()
             return AttachRunResponse(
                 merged=True,

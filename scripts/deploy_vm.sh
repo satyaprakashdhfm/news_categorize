@@ -47,6 +47,7 @@ if [[ -n "${DB_URL}" ]]; then
   psql "${DB_URL}" -f "${APP_DIR}/db/migration_v2.sql" || echo "[deploy] Migration v2 skipped or already applied."
   psql "${DB_URL}" -f "${APP_DIR}/db/fix_orphan_cards.sql" || echo "[deploy] Orphan-card fix skipped or already applied."
   psql "${DB_URL}" -f "${APP_DIR}/db/migration_v3.sql" || echo "[deploy] Migration v3 skipped or already applied."
+  psql "${DB_URL}" -f "${APP_DIR}/db/migration_v4.sql" || echo "[deploy] Migration v4 skipped or already applied."
 else
   echo "[deploy] DB_URL not set — skipping migrations. Run db/migration_v3.sql manually if needed."
 fi

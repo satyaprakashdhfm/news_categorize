@@ -155,11 +155,15 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
 
       if (runId) {
         await feedCardsApi.attachRun({ run_id: runId, card_id: card.id, query: card.title, title: card.title, domain: card.domain, subdomain: card.subdomain });
-        // Load items directly from the new run_id — never use loadItems() here
-        // because its useCallback closure still holds the OLD card.run_id.
+        // Load all accumulated items across all runs for this card
         try {
-          const runData = await browserResearchApi.getRun(runId);
-          setItems(runData.blogs || []);
+          const allData = await browserResearchApi.getCardItems(card.id);
+          if (allData.items && allData.items.length > 0) {
+            setItems(allData.items);
+          } else {
+            const runData = await browserResearchApi.getRun(runId);
+            setItems(runData.blogs || []);
+          }
           setItemType('browser');
           setSourceFilter('all');
           setVisibleCount(PAGE_SIZE);
@@ -207,10 +211,23 @@ export default function FeedCardDetailPage({ isDark, toggleDark }) {
           const runData = await browserResearchApi.getRun(card.run_id);
           setItems(runData.blogs || []); setItemType('browser');
         } else { setItems([]); setItemType('article'); }
-      } else if (card.run_id) {
-        const res = await browserResearchApi.getRun(card.run_id);
-        setItems(res.blogs || []); setItemType('browser');
-      } else { setItems([]); setItemType('browser'); }
+      } else {
+        // Custom card — load all items across all runs (accumulated history), fall back to latest run
+        try {
+          const res = await browserResearchApi.getCardItems(card.id);
+          if (res.items && res.items.length > 0) {
+            setItems(res.items); setItemType('browser');
+          } else if (card.run_id) {
+            const runData = await browserResearchApi.getRun(card.run_id);
+            setItems(runData.blogs || []); setItemType('browser');
+          } else { setItems([]); setItemType('browser'); }
+        } catch {
+          if (card.run_id) {
+            const runData = await browserResearchApi.getRun(card.run_id);
+            setItems(runData.blogs || []); setItemType('browser');
+          } else { setItems([]); setItemType('browser'); }
+        }
+      }
     } catch { setError('Failed to load items.'); setItems([]); }
     finally { setLoading(false); }
   }, [card, timeFilter, country]);
