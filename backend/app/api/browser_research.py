@@ -85,8 +85,19 @@ TOPIC_COMMUNITY_MAP: dict[str, list[str]] = {
     "nuclear": ["nuclear", "energy", "science", "Physics"],
     "aviation": ["aviation", "flying", "aerospace", "airplanes"],
     "aircraft": ["aviation", "aerospace", "flying", "airplanes", "engineering"],
+    "engine": ["aviation", "aerospace", "engineering", "IndiaDefence", "geopolitics"],
     "defense": ["geopolitics", "worldnews", "military", "CredibleDefense"],
+    "defence": ["IndiaDefence", "geopolitics", "india", "military", "CredibleDefense"],
     "military": ["military", "geopolitics", "worldnews", "CredibleDefense"],
+    "india": ["india", "IndiaDefence", "geopolitics", "IndiaSpeaks", "worldnews"],
+    "drdo": ["IndiaDefence", "india", "aerospace", "geopolitics", "aviation"],
+    "tejas": ["IndiaDefence", "india", "aviation", "aerospace", "geopolitics"],
+    "kaveri": ["IndiaDefence", "india", "aviation", "aerospace", "geopolitics"],
+    "missile": ["IndiaDefence", "military", "geopolitics", "worldnews", "CredibleDefense"],
+    "fighter": ["IndiaDefence", "aviation", "aerospace", "military", "geopolitics"],
+    "drone": ["IndiaDefence", "military", "aviation", "geopolitics", "technology"],
+    "pakistan": ["india", "geopolitics", "worldnews", "IndiaDefence", "CredibleDefense"],
+    "china": ["geopolitics", "worldnews", "China", "IndiaDefence", "ChinaPolicy"],
     "gaming": ["gaming", "Games", "pcgaming", "technology"],
     "game": ["gaming", "Games", "pcgaming", "boardgames"],
     "food": ["food", "cooking", "nutrition", "EatCheapAndHealthy"],
@@ -138,7 +149,8 @@ def _topic_aware_communities(query: str, limit: int = 5) -> list[str]:
 STOPWORDS = {
     "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into", "is", "it",
     "of", "on", "or", "that", "the", "to", "with", "about", "how", "what", "when", "where", "why",
-    "top", "latest", "new", "news", "update", "updates",
+    "top", "latest", "new", "news", "update", "updates", "own", "its", "has", "had",
+    "can", "did", "get", "got", "let", "put", "set", "say", "said", "now", "also",
 }
 
 # Cost rates are approximate and intentionally configurable in code.
@@ -370,6 +382,8 @@ def _tokenize_meaningful(text: str) -> set[str]:
     parts = [x.strip().lower() for x in (text or "").split()]
     cleaned = set()
     for token in parts:
+        # Strip possessive 's before removing non-alnum (india's → india)
+        token = token.rstrip("'s").rstrip("'")
         token = "".join(ch for ch in token if ch.isalnum())
         if len(token) < 3 or token in STOPWORDS:
             continue
@@ -1041,65 +1055,18 @@ async def run_live_browser_stream(
                     return events
 
                 # ── CALL 1: LLM plans full strategy + picks subreddits ────
-                # Always use Gemini for planning — Ollama (llama3.2:1b) can't follow
-                # complex JSON+rules instructions reliably.
-                yield emit("step", "LLM planning research strategy...")
-                FALLBACK_SUBS = _topic_aware_communities(query, 5)
-                plan: dict = {"subreddits": FALLBACK_SUBS, "youtube_query": query, "news_query": query}
+                # ── Keyword-based planning (no LLM — reliable across all models) ──
+                # llama3.2:1b cannot follow complex JSON+rules prompts, so we derive
+                # subreddits and search queries from the query text directly.
+                yield emit("step", "Planning research strategy from query keywords...")
+                subreddit_plan = _topic_aware_communities(query, 5)
 
-                _plan_client = client
-                if settings.USE_OLLAMA and settings.GOOGLE_API_KEY:
-                    try:
-                        from google import genai as _genai
-                        _plan_client = _genai.Client(api_key=settings.GOOGLE_API_KEY)
-                        _plan_model = settings.GEMINI_MODEL
-                    except Exception:
-                        _plan_client = client
-                        _plan_model = GEMINI_MODEL
-                else:
-                    _plan_model = GEMINI_MODEL
-
-                if _plan_client:
-                    plan_prompt = (
-                        f"Research query: \"{query}\"\n\n"
-                        "Return ONLY this JSON object, no markdown fences, no explanation:\n"
-                        "{\"subreddits\":[\"sub1\",\"sub2\",\"sub3\",\"sub4\",\"sub5\"],"
-                        "\"youtube_query\":\"keywords here\","
-                        "\"news_query\":\"keywords here\"}\n\n"
-                        "Rules:\n"
-                        "1. subreddits: exactly 5 subreddit names whose PRIMARY topic matches the query.\n"
-                        "   India defence/aviation/weapons → IndiaDefence, aviation, aerospace, geopolitics, india\n"
-                        "   AI/ML/LLM → MachineLearning, LocalLLaMA, artificial, technology, singularity\n"
-                        "   Economics/finance → economics, investing, IndiaInvestments, wallstreetbets, finance\n"
-                        "   Do NOT use MachineLearning, LocalLLaMA, or artificial for non-AI queries.\n"
-                        "   Do NOT use AskReddit, funny, pics, todayilearned, worldnews for topic queries.\n"
-                        "2. youtube_query: 3-5 specific keywords only, no filler words like 'best' or 'video'.\n"
-                        "3. news_query: 3-5 specific keywords only.\n"
-                        f"Example for this exact query → subreddits:[IndiaDefence,aviation,aerospace,geopolitics,india], "
-                        f"youtube_query:\"India Kaveri jet engine DRDO\", news_query:\"India indigenous aircraft engine update\""
-                    )
-                    try:
-                        resp = _plan_client.models.generate_content(model=_plan_model, contents=plan_prompt)
-                        _merge_usage(usage_totals, _usage_from_response(resp))
-                        parsed = _extract_json(_extract_response_text(resp))
-                        if isinstance(parsed, dict) and parsed.get("subreddits"):
-                            # Strip r/ prefix and spaces LLM sometimes adds
-                            parsed["subreddits"] = [_clean_sub_name(s) for s in parsed["subreddits"] if _clean_sub_name(s)]
-                            plan = parsed
-                    except Exception as e:
-                        logger.warning(f"[BROWSER] plan LLM failed: {e}")
-
-                _BAD_PREFIXES = ("short keyword", "best youtube", "best news", "4-6 keywords", "keyword search")
-                def _validate_llm_query(val: str, fallback: str) -> str:
-                    if not val:
-                        return fallback
-                    low = val.lower()
-                    if any(low.startswith(p) for p in _BAD_PREFIXES) or len(val) > 120:
-                        return fallback
-                    return val
-
-                yt_query: str = _validate_llm_query(plan.get("youtube_query") or "", query)
-                news_query: str = _validate_llm_query(plan.get("news_query") or "", query)
+                # Build search queries from meaningful keywords in the query
+                _kw = list(_tokenize_meaningful(query))
+                _search_str = " ".join(_kw[:6]) if _kw else query
+                yt_query: str = _search_str
+                news_query: str = _search_str
+                yield emit("step", f"Keywords: {_search_str}")
 
                 # ── Discover communities from reddit.com/explore ───────────
                 yield emit("step", "Browsing reddit.com/explore to discover real communities...")
@@ -1121,10 +1088,7 @@ async def run_live_browser_stream(
                 """)
                 yield emit("step", f"  → Found {len(explored_subs)} communities on explore page")
 
-                # Use LLM-planned subreddits directly — don't mix with explore page subs
-                # (explore page shows trending/popular communities, not topic-relevant ones)
-                llm_subs = plan.get("subreddits") or []
-                subreddits: list[str] = llm_subs[:5] if llm_subs else FALLBACK_SUBS
+                subreddits: list[str] = subreddit_plan[:5]
 
                 unique_subs = subreddits
                 yield emit("step", f"Selected subreddits: {', '.join(f'r/{s}' for s in subreddits)}")
