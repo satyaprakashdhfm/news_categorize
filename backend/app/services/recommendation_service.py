@@ -1,11 +1,11 @@
 import uuid
 import asyncio
+import json
 import logging
-from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
-from app.models.user import User
-from app.models.recommendation import UserRecommendation
+from app.models.feed_card import FeedCard, UserFeedCard
+from app.models.browser_research_run import BrowserResearchRun, BrowserResearchItem
 
 logger = logging.getLogger(__name__)
 
@@ -141,26 +141,17 @@ SUBDOMAIN_CONFIG = {
 }
 
 # Map domain → its subdomains
-DOMAIN_SUBDOMAINS = {}
-for sub_code, sub_cfg in SUBDOMAIN_CONFIG.items():
-    dom = sub_cfg["domain"]
-    DOMAIN_SUBDOMAINS.setdefault(dom, []).append(sub_code)
+DOMAIN_SUBDOMAINS: dict[str, list[str]] = {}
+for _sub_code, _sub_cfg in SUBDOMAIN_CONFIG.items():
+    DOMAIN_SUBDOMAINS.setdefault(_sub_cfg["domain"], []).append(_sub_code)
 
 
-def _get_batch_label() -> str:
-    ist = timezone(timedelta(hours=5, minutes=30))
-    hour = datetime.now(ist).hour
-    if hour < 10:
-        return "morning"
-    elif hour < 16:
-        return "afternoon"
-    else:
-        return "evening"
-
+# ── Source fetchers (unchanged) ───────────────────────────────────────────────
 
 async def _search_google_news(query: str) -> list[dict]:
     try:
         from app.services.article_extractor_service import article_extractor_service
+        from datetime import datetime
         today = datetime.now().strftime("%Y-%m-%d")
         items = await article_extractor_service.search(
             country_code="USA", topic=query, date=today, max_results=3
@@ -176,7 +167,7 @@ async def _search_google_news(query: str) -> list[dict]:
             for item in items if item.get("title")
         ]
     except Exception as exc:
-        logger.warning(f"[RECS] Google News failed: {exc}")
+        logger.warning(f"[CRON] Google News failed: {exc}")
         return []
 
 
@@ -204,7 +195,7 @@ async def _search_reddit(subreddits: list[str]) -> list[dict]:
                     })
         return results
     except Exception as exc:
-        logger.warning(f"[RECS] Reddit failed: {exc}")
+        logger.warning(f"[CRON] Reddit failed: {exc}")
         return []
 
 
@@ -231,146 +222,152 @@ async def _search_youtube(channels: list[str]) -> list[dict]:
                     })
         return results
     except Exception as exc:
-        logger.warning(f"[RECS] YouTube failed: {exc}")
+        logger.warning(f"[CRON] YouTube failed: {exc}")
         return []
 
 
 async def _search_for_subdomain(sub_code: str) -> list[dict]:
-    """Search Google News + Reddit + YouTube for a specific subdomain."""
     cfg = SUBDOMAIN_CONFIG.get(sub_code)
     if not cfg:
         return []
 
-    queries = cfg.get("queries", [])
-    subreddits = cfg.get("subreddits", [])
-    youtube_channels = cfg.get("youtube", [])
-
     tasks = []
-    # Google News — use first query
-    if queries:
-        tasks.append(_search_google_news(queries[0]))
-    # Reddit
-    tasks.append(_search_reddit(subreddits))
-    # YouTube
-    tasks.append(_search_youtube(youtube_channels))
+    if cfg.get("queries"):
+        tasks.append(_search_google_news(cfg["queries"][0]))
+    tasks.append(_search_reddit(cfg.get("subreddits", [])))
+    tasks.append(_search_youtube(cfg.get("youtube", [])))
 
     results_batches = await asyncio.gather(*tasks, return_exceptions=True)
 
-    all_results = []
+    seen: set[str] = set()
+    unique: list[dict] = []
     for batch in results_batches:
-        if isinstance(batch, list):
-            all_results.extend(batch)
-
-    # Deduplicate by URL
-    seen = set()
-    unique = []
-    for item in all_results:
-        url = item.get("source_url", "")
-        if url and url not in seen:
-            seen.add(url)
-            unique.append(item)
+        if not isinstance(batch, list):
+            continue
+        for item in batch:
+            url = item.get("source_url", "")
+            if url and url not in seen:
+                seen.add(url)
+                unique.append(item)
     return unique
 
 
-def generate_recommendations():
-    """Generate personalized recommendations by searching at subdomain level."""
+# ── DB helpers ────────────────────────────────────────────────────────────────
+
+def _save_run_for_card(db: Session, card: FeedCard, items: list[dict]) -> None:
+    """Create a BrowserResearchRun from fetched items and link it to the card."""
+    cfg = SUBDOMAIN_CONFIG.get(card.subdomain or "", {})
+    run = BrowserResearchRun(
+        run_id=str(uuid.uuid4()),
+        query=(cfg.get("queries") or [card.title or card.subdomain or ""])[0],
+        selected_reddit_communities=json.dumps(cfg.get("subreddits", [])),
+        youtube_channels_used=json.dumps(cfg.get("youtube", [])),
+        total_blogs=len(items),
+        created_by=None,
+    )
+    db.add(run)
+    for item in items:
+        db.add(BrowserResearchItem(
+            run_id=run.run_id,
+            source=item.get("source_type", "web"),
+            title=(item.get("title") or "")[:512],
+            summary=(item.get("summary") or "")[:4000],
+            url=item.get("source_url") or "",
+            score=item.get("score"),
+        ))
+    card.run_id = run.run_id
+
+
+# ── Main cron function ────────────────────────────────────────────────────────
+
+def refresh_cards() -> int:
+    """
+    Cron entry point.
+
+    Phase 1 — Admin cards (is_global=True, created_by=NULL, type='domain'):
+      Always refreshed regardless of user activity. These are the showcase cards.
+
+    Phase 2 — User-pinned cards (UserFeedCard rows):
+      Any card saved by at least one user gets a fresh run.
+      Admin cards already handled in Phase 1 are skipped here.
+    """
     db: Session = SessionLocal()
-    batch_label = _get_batch_label()
     try:
-        users = db.query(User).filter(User.interests.isnot(None)).all()
-        users_with_interests = [u for u in users if u.interests]
-        if not users_with_interests:
-            logger.info("[RECS] No users with interests, skipping")
+        # Phase 1: admin/global domain cards
+        admin_cards: list[FeedCard] = (
+            db.query(FeedCard)
+            .filter(
+                FeedCard.is_global.is_(True),
+                FeedCard.created_by.is_(None),
+                FeedCard.type == "domain",
+            )
+            .all()
+        )
+
+        # Phase 2: user-pinned non-admin cards
+        admin_ids = {c.id for c in admin_cards}
+        pinned_ids = {
+            row.card_id
+            for row in db.query(UserFeedCard.card_id).distinct().all()
+            if row.card_id not in admin_ids
+        }
+        user_cards: list[FeedCard] = (
+            db.query(FeedCard).filter(FeedCard.id.in_(pinned_ids)).all()
+            if pinned_ids else []
+        )
+
+        # Only cards with a known subdomain config
+        cards_to_refresh = [
+            c for c in (admin_cards + user_cards)
+            if c.subdomain and c.subdomain in SUBDOMAIN_CONFIG
+        ]
+
+        if not cards_to_refresh:
+            logger.info("[CRON] No cards to refresh")
             return 0
 
-        # Collect all unique subdomains needed across all users
-        needed_subdomains = set()
-        for user in users_with_interests:
-            for domain in (user.interests or []):
-                for sub in DOMAIN_SUBDOMAINS.get(domain, []):
-                    needed_subdomains.add(sub)
+        logger.info(
+            f"[CRON] Refreshing {len(admin_cards)} admin cards + "
+            f"{len(user_cards)} user-pinned cards"
+        )
 
-        logger.info(f"[RECS] Searching {len(needed_subdomains)} subdomains for {len(users_with_interests)} users")
-
-        # Search once per subdomain (shared across users with same interests)
+        # Search all needed subdomains concurrently (once per subdomain, shared across cards)
+        unique_subs = list({c.subdomain for c in cards_to_refresh})
         loop = asyncio.new_event_loop()
-        subdomain_results = {}
         try:
-            for sub_code in needed_subdomains:
-                cfg = SUBDOMAIN_CONFIG.get(sub_code, {})
-                results = loop.run_until_complete(_search_for_subdomain(sub_code))
-                subdomain_results[sub_code] = results
-                logger.info(f"[RECS] {sub_code} ({cfg.get('label', sub_code)}): {len(results)} items")
+            raw = loop.run_until_complete(
+                asyncio.gather(*[_search_for_subdomain(s) for s in unique_subs], return_exceptions=True)
+            )
         finally:
             loop.close()
 
-        # 24h cutoff for duplicate checking
-        cutoff = datetime.utcnow() - timedelta(hours=24)
+        sub_items: dict[str, list[dict]] = {
+            sub: (res if isinstance(res, list) else [])
+            for sub, res in zip(unique_subs, raw)
+        }
 
-        total_created = 0
-        for user in users_with_interests:
-            interests = user.interests or []
-
-            # Get URLs already recommended to this user in last 24h
-            recent_urls = {
-                r.source_url
-                for r in db.query(UserRecommendation.source_url)
-                .filter(
-                    UserRecommendation.user_id == user.id,
-                    UserRecommendation.created_at >= cutoff,
-                    UserRecommendation.source_url.isnot(None),
-                )
-                .all()
-                if r.source_url
-            }
-
-            new_recs = []
-            for domain in interests:
-                subdomains = DOMAIN_SUBDOMAINS.get(domain, [])
-                for sub_code in subdomains:
-                    cfg = SUBDOMAIN_CONFIG.get(sub_code, {})
-                    items = subdomain_results.get(sub_code, [])
-                    count = 0
-                    for item in items:
-                        if count >= 3:  # max 3 per subdomain per user
-                            break
-                        url = item.get("source_url", "")
-                        if url in recent_urls:
-                            continue
-
-                        source_label = {
-                            "google_news": "Google News",
-                            "reddit": "Reddit",
-                            "youtube": "YouTube",
-                        }.get(item.get("source_type", ""), "Web")
-
-                        rec = UserRecommendation(
-                            id=str(uuid.uuid4()),
-                            user_id=user.id,
-                            domain=domain,
-                            subdomain=sub_code,
-                            reason=f"{cfg.get('label', sub_code)} — via {source_label}",
-                            batch_label=batch_label,
-                            title=item.get("title", "")[:512],
-                            summary=(item.get("summary") or "")[:4000],
-                            source_url=url[:1024] if url else None,
-                            source_type=item.get("source_type"),
-                            score=item.get("score"),
-                        )
-                        new_recs.append(rec)
-                        recent_urls.add(url)
-                        count += 1
-
-            if new_recs:
-                db.add_all(new_recs)
-                total_created += len(new_recs)
+        refreshed = 0
+        for card in cards_to_refresh:
+            items = sub_items.get(card.subdomain, [])
+            if not items:
+                logger.warning(f"[CRON] No items fetched for {card.subdomain} ('{card.title}'), skipping")
+                continue
+            _save_run_for_card(db, card, items)
+            refreshed += 1
+            tag = "admin" if card.id in admin_ids else "user"
+            logger.info(f"[CRON] [{tag}] '{card.title}' ({card.subdomain}): {len(items)} items")
 
         db.commit()
-        logger.info(f"[RECS] Generated {total_created} recommendations for {len(users_with_interests)} users (batch={batch_label})")
-        return total_created
+        logger.info(f"[CRON] Complete — {refreshed}/{len(cards_to_refresh)} cards refreshed")
+        return refreshed
+
     except Exception as exc:
-        logger.error(f"[RECS] Error: {exc}", exc_info=True)
+        logger.error(f"[CRON] Error: {exc}", exc_info=True)
         db.rollback()
         return 0
     finally:
         db.close()
+
+
+# Backward-compat alias — main.py scheduler calls generate_recommendations
+generate_recommendations = refresh_cards

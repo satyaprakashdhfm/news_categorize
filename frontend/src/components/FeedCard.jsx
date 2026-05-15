@@ -103,6 +103,23 @@ export default function FeedCard({ card, isPinned = false, onPin, onUnpin, reaso
           {isDomain ? 'Domain' : 'Research'}
         </span>
         {dnaCode && <span className="tag tag--code">{dnaCode}</span>}
+        {card.is_global && !card.created_by && (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 3,
+            fontSize: 'var(--t-micro)', fontWeight: 600,
+            color: '#f0c060',
+            background: 'rgba(240,192,96,0.12)',
+            border: '1px solid rgba(240,192,96,0.25)',
+            borderRadius: 4,
+            padding: '1px 6px',
+            letterSpacing: '0.02em',
+          }}>
+            <svg width="9" height="9" viewBox="0 0 12 12" fill="none">
+              <path d="M6 1L7.2 4.2H10.5L7.9 6.3L8.9 9.5L6 7.5L3.1 9.5L4.1 6.3L1.5 4.2H4.8Z" fill="#f0c060"/>
+            </svg>
+            Official
+          </span>
+        )}
       </header>
 
       {/* Title */}
