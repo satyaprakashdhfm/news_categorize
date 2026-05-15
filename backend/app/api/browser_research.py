@@ -491,11 +491,12 @@ async def _batch_title_filter(
     lines = [f"{i+1}. [{it.source}] {it.title[:120]}" for i, it in enumerate(items)]
     numbered = "\n".join(lines)
 
+    # Simple YES/NO format — small models (llama3.2:1b) handle this more reliably
+    # than JSON. Each item gets YES (on-topic) or NO (off-topic).
     prompt = (
         f'Topic: "{query}"\n\n'
-        f'Below is a numbered list of news/post titles. '
-        f'Reply with ONLY a JSON object listing the numbers that are relevant to the topic.\n'
-        f'Format: {{"keep": [1, 2, 5]}}\n\n'
+        f'For each numbered item, answer YES if it is directly about this topic, NO if it is not.\n'
+        f'Reply ONLY with: 1:YES 2:NO 3:YES ... (number colon YES or NO for every item)\n\n'
         f'{numbered}'
     )
 
@@ -506,20 +507,20 @@ async def _batch_title_filter(
             contents=prompt,
         )
         text = _extract_response_text(resp)
-        payload = _extract_json(text)
-        keep_nums: set[int] = set()
 
-        if isinstance(payload, dict) and isinstance(payload.get("keep"), list):
-            keep_nums = {int(n) for n in payload["keep"] if str(n).lstrip('-').isdigit()}
+        # Parse "1:YES 2:NO 3:YES" format
+        pairs = _re.findall(r'(\d+)\s*[:.\-]\s*(YES|NO|yes|no|Yes|No)', text)
+        if pairs:
+            keep_nums = {int(n) for n, verdict in pairs if verdict.upper() == "YES"}
         else:
-            # Fallback: extract any standalone numbers from the response
+            # Fallback: bare numbers in the response = kept items
             keep_nums = {int(n) for n in _re.findall(r'\b(\d+)\b', text)
                          if 1 <= int(n) <= len(items)}
 
         if keep_nums:
             kept = [it for i, it in enumerate(items) if (i + 1) in keep_nums]
-            # Sanity: if LLM drops >80% it probably misfired — keep all
-            if len(kept) >= max(3, len(items) * 0.2):
+            # Sanity: if LLM drops >75% it probably misfired — keep all
+            if len(kept) >= max(3, len(items) * 0.25):
                 dropped = len(items) - len(kept)
                 return kept, f"AI kept {len(kept)}/{len(items)}, dropped {dropped} off-topic"
     except Exception as _e:
@@ -748,24 +749,50 @@ async def _fetch_reddit_global_search(
     if not posts_data:
         return [], _empty_usage()
 
-    # Filter by title relevance: keep only posts whose title contains at least 1
-    # search keyword. This removes completely off-topic posts (job listings, car
-    # advice, etc.) that matched only because of a generic term like "india".
+    # ── Dedup by URL/permalink (Reddit sometimes returns same post twice) ──
+    _seen_urls: set[str] = set()
+    deduped: list[dict] = []
+    for d in posts_data:
+        _url_key = d.get("permalink") or d.get("url") or d.get("id") or ""
+        if _url_key and _url_key in _seen_urls:
+            continue
+        if _url_key:
+            _seen_urls.add(_url_key)
+        deduped.append(d)
+    posts_data = deduped
+
+    # ── Title keyword filter ───────────────────────────────────────────────
+    # Keep posts whose title contains at least 1 search keyword.
     meaningful_kw = set(kw)
+    # Words that are too generic to qualify a post on their own (country/region names).
+    _LOCATION_WORDS = {"india", "indian", "pakistan", "china", "chinese", "us", "usa", "american", "uk", "british"}
+    # Domain terms: if title only matched via location words, require at least one of these.
+    _DOMAIN_TERMS = {
+        "aircraft", "engine", "fighter", "jet", "aviation", "flight", "missile",
+        "drone", "military", "defence", "defense", "air", "force", "pilot",
+        "helicopter", "rocket", "aerospace", "weapon", "army", "navy",
+        "tejas", "kaveri", "drdo", "hal", "amca", "rafale", "sukhoi", "mig",
+    }
     if meaningful_kw:
-        title_matched = [
-            d for d in posts_data
-            if meaningful_kw.intersection(_tokenize_meaningful(d.get("title", "")))
-        ]
-        # If title filter is too strict, also allow subreddit name to count
-        if len(title_matched) < 5:
-            title_matched = [
-                d for d in posts_data
-                if meaningful_kw.intersection(
-                    _tokenize_meaningful(d.get("title", "") + " " + (d.get("subreddit") or ""))
-                )
-            ]
-        posts_data = title_matched if title_matched else posts_data
+        filtered: list[dict] = []
+        for d in posts_data:
+            title_kw = _tokenize_meaningful(d.get("title", ""))
+            matched = meaningful_kw.intersection(title_kw)
+            if not matched:
+                # No keyword match in title — try subreddit name as fallback
+                sub_kw = _tokenize_meaningful(d.get("subreddit") or "")
+                if not meaningful_kw.intersection(sub_kw):
+                    continue
+                matched = meaningful_kw.intersection(sub_kw)
+            # If every matched keyword is a generic location word, require a domain term in title
+            non_location = matched - _LOCATION_WORDS
+            if not non_location:
+                title_lower = d.get("title", "").lower()
+                if not any(t in title_lower for t in _DOMAIN_TERMS):
+                    continue  # only matched "india" with no aviation/defence context
+            filtered.append(d)
+        # Safety: if filter removed everything, fall back to unfiltered
+        posts_data = filtered if len(filtered) >= 3 else (filtered or posts_data)
 
     usage_totals = _empty_usage()
     posts = []
