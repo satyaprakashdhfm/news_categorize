@@ -370,8 +370,8 @@ export default function ProfilePage({ isDark, toggleDark }) {
                           <span className="meta">Loading...</span>
                         </div>
                       ) : runData ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 8, maxHeight: 256, overflowY: 'auto' }}>
-                          {(runData.blogs || []).slice(0, 10).map((b, idx) => (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 8, maxHeight: 480, overflowY: 'auto' }}>
+                          {(runData.blogs || []).map((b, idx) => (
                             <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 'var(--t-meta)' }}>
                               <span style={{
                                 flexShrink: 0, padding: '1px 6px', borderRadius: 'var(--r-sm)',
@@ -388,9 +388,6 @@ export default function ProfilePage({ isDark, toggleDark }) {
                               )}
                             </div>
                           ))}
-                          {(runData.blogs || []).length > 10 && (
-                            <p className="meta" style={{ paddingTop: 4 }}>+{runData.blogs.length - 10} more items</p>
-                          )}
                         </div>
                       ) : (
                         <p className="meta" style={{ padding: '8px 0' }}>Could not load run details.</p>
