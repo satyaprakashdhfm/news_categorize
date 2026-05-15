@@ -343,18 +343,10 @@ def _summarize_text(title: str, body: str, client, trace_id: str = None) -> tupl
         return fallback, _empty_usage()
 
     prompt = (
-        "Summarize this news article using ONLY the fields that are clearly present in the content.\n"
-        "Skip any field that is not mentioned or cannot be inferred.\n"
-        "Use this format (one line per field, label in bold):\n\n"
-        "**What happened:** <one sentence>\n"
-        "**Location:** <city, country or 'Not specified'>\n"
-        "**When:** <date or time period mentioned>\n"
-        "**Who:** <people, organizations, or countries involved>\n"
-        "**Why/Cause:** <reason or trigger>\n"
-        "**Impact:** <effects or significance>\n"
-        "**Current status:** <latest state of affairs>\n"
-        "**Next steps:** <planned actions or what to watch>\n\n"
-        "Be concise — one sentence per field. Drop the field entirely if not in the article.\n\n"
+        "Write a single flowing paragraph (3-5 sentences, no headings, no bullet points, no labels) "
+        "that naturally weaves together: what happened, where, when, who was involved, why it happened, "
+        "what the impact is, current status, and next steps — but only include the details that are "
+        "actually present in the article. Write like a sharp news reporter: factual, specific, concise.\n\n"
         f"Title: {title}\nBody: {body or ''}"
     )
     try:
