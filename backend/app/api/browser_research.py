@@ -1092,17 +1092,19 @@ async def run_live_browser_stream(
                         yield ev
                     yield emit("step", "YouTube page loaded, extracting videos...")
                     await asyncio.sleep(3)
+                    await page.evaluate("window.scrollBy(0, 800)")
+                    await asyncio.sleep(1)
 
                     videos_raw = await page.evaluate("""
                         () => {
-                            // Tier 0: today / hours / 1-2 days ago
+                            // Tier 0: today/hours/1-2 days ago (fresh)
                             const FRESH = /\\d+ (second|minute|hour)s? ago|^1 day ago|^2 days? ago/i;
                             // Tier 1: this week (3-7 days)
                             const THIS_WEEK = /[3-7] days? ago/i;
-                            // Skip: weeks / months / years old
-                            const SKIP = /\\d+ (week|month|year)s? ago/i;
+                            // Tier 3: old (weeks/months/years) — kept as last-resort fallback
+                            const OLD = /\\d+ (week|month|year)s? ago/i;
 
-                            const items = [];
+                            const all = [];
                             document.querySelectorAll('ytd-video-renderer').forEach(el => {
                                 const titleEl = el.querySelector('a#video-title');
                                 const channelEl = el.querySelector('ytd-channel-name a, #channel-name a');
@@ -1112,23 +1114,25 @@ async def run_live_browser_stream(
                                 const title = (titleEl.getAttribute('title') || titleEl.textContent || '').trim();
                                 const metaText = [...spans].map(s=>s.textContent.trim()).join(' | ');
                                 if (!title || !href.includes('watch')) return;
-                                if (SKIP.test(metaText)) return;
-                                items.push({
+                                // Tier: 0=fresh, 1=this week, 2=unclassified, 3=old
+                                const tier = FRESH.test(metaText) ? 0
+                                           : THIS_WEEK.test(metaText) ? 1
+                                           : OLD.test(metaText) ? 3 : 2;
+                                all.push({
                                     title,
                                     url: href.startsWith('http') ? href : 'https://www.youtube.com' + href,
                                     channel: channelEl?.textContent.trim() || '',
                                     description: el.querySelector('#description-text')?.textContent.trim() || '',
                                     meta: metaText,
-                                    tier: FRESH.test(metaText) ? 0 : THIS_WEEK.test(metaText) ? 1 : 2,
+                                    tier,
                                 });
                             });
 
-                            // Sort: freshest first
-                            items.sort((a, b) => a.tier - b.tier);
-                            // Return fresh (tier 0-1) only; if < 3 found, fill with tier-2 backup
-                            const primary = items.filter(v => v.tier <= 1);
-                            const backup = items.filter(v => v.tier === 2);
-                            const fill = primary.length < 3 ? backup.slice(0, 4 - primary.length) : [];
+                            all.sort((a, b) => a.tier - b.tier);
+                            const primary = all.filter(v => v.tier <= 1);   // fresh + this week
+                            const fallback = all.filter(v => v.tier > 1);   // unclassified or old
+                            // Always return something — fill with older content if <4 fresh
+                            const fill = primary.length < 4 ? fallback.slice(0, 5 - primary.length) : [];
                             return [...primary, ...fill].slice(0, 8);
                         }
                     """)
@@ -1149,48 +1153,48 @@ async def run_live_browser_stream(
                     logger.warning(f"[BROWSER] YouTube phase failed: {_yt_err}")
                     yield emit("step", f"  → YouTube failed ({type(_yt_err).__name__}: {str(_yt_err)[:120]})")
 
-                # ── PHASE 3: News via Bing News ───────────────────────────────
+                # ── PHASE 3: Bing News RSS (no browser — more reliable than HTML scraping) ──
                 news_blogs: list[BlogItem] = []
                 try:
-                    bing_news_url = f"https://www.bing.com/news/search?q={quote_plus(news_query)}&qft=interval%3d%223%22&sortby=Date&form=PTFTNR"
-                    yield emit("step", f"Bing News (past day): '{news_query}'")
-                    for ev in await nav(bing_news_url, t=30000):
-                        yield ev
-                    yield emit("step", "Bing News page loaded, extracting articles...")
-
-                    news_raw = await page.evaluate("""
-                        () => {
-                            const seen = new Set();
-                            const items = [];
-                            document.querySelectorAll('.news-card, .newscard, article, .news-card-body').forEach(card => {
-                                const a = card.querySelector('a[href]');
-                                const titleEl = card.querySelector('.title, h2, h3, .news-card-title a');
-                                const snippetEl = card.querySelector('.snippet, .news-card-description, p');
-                                const title = (titleEl?.textContent || a?.textContent || '').trim();
-                                const url = a?.href || '';
-                                if (title && title.length > 15 && url.startsWith('http') && !seen.has(url)
-                                    && !url.includes('bing.com') && !url.includes('microsoft.com')) {
-                                    seen.add(url);
-                                    items.push({ title, url, snippet: snippetEl?.textContent.trim().slice(0, 300) || '' });
-                                }
-                            });
-                            return items.slice(0, 12);
-                        }
-                    """)
-
-                    if news_raw:
-                        yield emit("step", f"  → {len(news_raw)} Bing news articles found, summarizing...")
-                        async def summarize_news(a: dict) -> BlogItem:
-                            async with sem:
-                                summary, u = await asyncio.to_thread(
-                                    _summarize_text, a["title"], a.get("snippet", ""), _sum_client
-                                )
-                                _merge_usage(usage_totals, u)
-                                return BlogItem(source="news", title=a["title"], summary=summary, url=a["url"])
-                        news_blogs = list(await asyncio.gather(*[summarize_news(a) for a in news_raw]))
+                    import aiohttp as _aiohttp_bing
+                    import xml.etree.ElementTree as _ET_bing
+                    import email.utils as _eutils
+                    from datetime import timezone as _tz, timedelta as _td
+                    _two_days_ago = datetime.now(_tz.utc) - _td(days=2)
+                    bing_rss_url = f"https://www.bing.com/news/search?q={quote_plus(news_query)}&format=RSS"
+                    yield emit("step", f"Bing News RSS (past 2d): '{news_query}'")
+                    async with _aiohttp_bing.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as _bsess:
+                        async with _bsess.get(bing_rss_url, timeout=_aiohttp_bing.ClientTimeout(total=15)) as _bresp:
+                            if _bresp.status == 200:
+                                _brss = await _bresp.text()
+                                _broot = _ET_bing.fromstring(_brss)
+                                bing_raw = []
+                                for _item in _broot.findall(".//item")[:15]:
+                                    _btitle = (_item.findtext("title") or "").strip()
+                                    _blink = (_item.findtext("link") or "").strip()
+                                    _bdesc = (_item.findtext("description") or "")[:300].strip()
+                                    _bpub = (_item.findtext("pubDate") or "").strip()
+                                    if not _btitle or not _blink:
+                                        continue
+                                    # Date filter: skip if older than 2 days
+                                    try:
+                                        _bdt = _eutils.parsedate_to_datetime(_bpub).astimezone(_tz.utc)
+                                        if _bdt < _two_days_ago:
+                                            continue
+                                    except Exception:
+                                        pass  # keep if unparseable
+                                    bing_raw.append({"title": _btitle, "url": _blink, "snippet": _bdesc})
+                                yield emit("step", f"  → {len(bing_raw)} Bing News articles found")
+                                if bing_raw:
+                                    async def _sum_bing(a: dict) -> BlogItem:
+                                        async with sem:
+                                            summary, u = await asyncio.to_thread(_summarize_text, a["title"], a.get("snippet", ""), _sum_client)
+                                            _merge_usage(usage_totals, u)
+                                            return BlogItem(source="news", title=a["title"], summary=summary, url=a["url"])
+                                    news_blogs = list(await asyncio.gather(*[_sum_bing(a) for a in bing_raw]))
                 except Exception as _bing_err:
-                    logger.warning(f"[BROWSER] Bing News phase failed: {_bing_err}")
-                    yield emit("step", f"  → Bing News failed ({type(_bing_err).__name__}: {str(_bing_err)[:120]})")
+                    logger.warning(f"[BROWSER] Bing News RSS failed: {_bing_err}")
+                    yield emit("step", f"  → Bing News RSS failed ({type(_bing_err).__name__}: {str(_bing_err)[:120]})")
 
                 # ── PHASE 3b: Google News RSS ──────────────────────────────
                 try:
