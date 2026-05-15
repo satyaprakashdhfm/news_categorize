@@ -46,67 +46,110 @@ function TrendingShimmer() {
 }
 
 function HotCardsSidebar({ cards, navigate }) {
-  if (!cards.length) {
-    return <div className="meta" style={{ textAlign: 'center', padding: '24px 0' }}>No cards yet.</div>;
-  }
+  const [sortBy, setSortBy] = useState('hot'); // 'hot' | 'saves' | 'recent'
+
+  const sorted = [...cards].sort((a, b) => {
+    if (sortBy === 'saves') return (b.pinned_count || 0) - (a.pinned_count || 0);
+    if (sortBy === 'recent') {
+      const ta = a.updated_at ? new Date(a.updated_at) : 0;
+      const tb = b.updated_at ? new Date(b.updated_at) : 0;
+      return tb - ta;
+    }
+    // 'hot' — combined: content > saves > recency (server order)
+    return 0;
+  });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {cards.map((card, i) => {
-        const color = DOMAIN_COLORS_CSS[card.domain] || DOMAIN_COLORS_CSS.OTH;
-        const subLabel = SUBCATEGORY_LABELS[card.subdomain] || card.subdomain;
-        const hasSaves = card.pinned_count > 0;
-        const hasContent = !!card.run_id;
-
-        const signal = hasSaves
-          ? { label: `↑ ${card.pinned_count}`, color: 'var(--accent)' }
-          : hasContent
-            ? { label: 'Live', color: '#4cba6e' }
-            : { label: 'New', color: 'var(--fg-4)' };
-
-        return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {/* Sort toggle */}
+      <div style={{
+        display: 'flex', gap: 4, marginBottom: 8, padding: '0 2px',
+      }}>
+        {[
+          { key: 'hot', label: '🔥 Hot' },
+          { key: 'saves', label: '↑ Saves' },
+          { key: 'recent', label: '⏱ Recent' },
+        ].map(({ key, label }) => (
           <button
-            key={card.id}
-            onClick={() => navigate(`/feed/${card.id}`)}
+            key={key}
+            onClick={() => setSortBy(key)}
             style={{
-              display: 'flex', alignItems: 'flex-start', gap: 10,
-              padding: '9px 10px', borderRadius: 'var(--r-md)',
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              textAlign: 'left', width: '100%', transition: 'background 0.15s',
+              flex: 1, padding: '4px 0',
+              fontSize: 10, fontWeight: 700,
+              borderRadius: 'var(--r-sm)',
+              border: sortBy === key ? '1.5px solid var(--accent)' : '1.5px solid var(--line-1)',
+              background: sortBy === key ? 'var(--accent-soft)' : 'transparent',
+              color: sortBy === key ? 'var(--accent)' : 'var(--fg-3)',
+              cursor: 'pointer', transition: 'all 0.15s',
             }}
-            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-2)'}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
           >
-            <span style={{
-              fontSize: 10, fontWeight: 700, color: 'var(--fg-4)',
-              minWidth: 14, paddingTop: 3, lineHeight: 1,
-            }}>
-              {i + 1}
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{
-                fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--fg-1)',
-                margin: 0, lineHeight: 1.4,
-                display: '-webkit-box', WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical', overflow: 'hidden',
-              }}>
-                {card.title}
-              </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                {subLabel && (
-                  <span style={{ fontSize: 10, color: 'var(--fg-3)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 90 }}>
-                    {subLabel}
-                  </span>
-                )}
-                <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: signal.color, flexShrink: 0 }}>
-                  {signal.label}
-                </span>
-              </div>
-            </div>
+            {label}
           </button>
-        );
-      })}
+        ))}
+      </div>
+
+      {/* Card list */}
+      {sorted.length === 0
+        ? <div className="meta" style={{ textAlign: 'center', padding: '24px 0' }}>No cards yet.</div>
+        : sorted.map((card, i) => {
+          const color = DOMAIN_COLORS_CSS[card.domain] || DOMAIN_COLORS_CSS.OTH;
+          const subLabel = SUBCATEGORY_LABELS[card.subdomain] || card.subdomain;
+          const snippet = card.description
+            ? card.description.slice(0, 60) + (card.description.length > 60 ? '…' : '')
+            : null;
+
+          const signal = card.pinned_count > 0
+            ? { label: `↑ ${card.pinned_count} saved`, color: 'var(--accent)' }
+            : card.run_id
+              ? { label: 'Live', color: '#4cba6e' }
+              : { label: 'New', color: 'var(--fg-4)' };
+
+          return (
+            <button
+              key={card.id}
+              onClick={() => navigate(`/feed/${card.id}`)}
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                padding: '9px 10px', borderRadius: 'var(--r-md)',
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                textAlign: 'left', width: '100%', transition: 'background 0.15s',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-2)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            >
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--fg-4)', minWidth: 14, paddingTop: 3, lineHeight: 1 }}>
+                {i + 1}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{
+                  fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--fg-1)',
+                  margin: 0, lineHeight: 1.4,
+                  display: '-webkit-box', WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                }}>
+                  {card.title}
+                </p>
+                {snippet && (
+                  <p style={{ fontSize: 10, color: 'var(--fg-3)', margin: '3px 0 0', lineHeight: 1.4 }}>
+                    {snippet}
+                  </p>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                  {subLabel && (
+                    <span style={{ fontSize: 10, color: 'var(--fg-3)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 80 }}>
+                      {subLabel}
+                    </span>
+                  )}
+                  <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: signal.color, flexShrink: 0 }}>
+                    {signal.label}
+                  </span>
+                </div>
+              </div>
+            </button>
+          );
+        })
+      }
     </div>
   );
 }

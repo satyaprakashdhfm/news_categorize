@@ -167,7 +167,7 @@ def get_global_cards(
 
 @router.get("/hot", response_model=dict)
 def get_hot_cards(
-    limit: int = Query(8, ge=1, le=20),
+    limit: int = Query(10, ge=1, le=20),
     db: Session = Depends(get_db),
 ):
     from datetime import datetime, timedelta
@@ -189,6 +189,7 @@ def get_hot_cards(
             {
                 "id": c.id,
                 "title": c.title,
+                "description": c.description,
                 "domain": c.domain,
                 "subdomain": c.subdomain,
                 "pinned_count": c.pinned_count,
