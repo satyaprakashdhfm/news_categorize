@@ -1208,6 +1208,12 @@ async def run_live_browser_stream(
                 )
                 _search_str = " ".join(_cleaned.split()[:12])  # cap at 12 words
 
+                # Tokenized keywords — stopwords stripped, used for Reddit/Twitter
+                # so common words like "new", "updates", "on" don't pollute the query
+                # and Reddit doesn't return random popular posts matching "new" or "on"
+                _kw = list(_tokenize_meaningful(query))
+                _kw_str = " ".join(_kw[:6]) if _kw else _search_str
+
                 _news_intent = {"update", "updates", "news", "latest", "recent", "current", "today"}
                 _query_words = set(query.lower().split())
                 _has_news_intent = bool(_query_words & _news_intent)
@@ -1228,17 +1234,18 @@ async def run_live_browser_stream(
                 ))
 
                 # ── Per-source queries ─────────────────────────────────────
-                # YouTube: always need year to avoid old tutorials; add "news"
-                # if user didn't already express news intent.
+                # YouTube/News: use natural language (search engines handle it well)
                 _yt_ctx = " ".join(filter(None, [_region_suffix, str(_year)]))
                 if _has_news_intent:
                     yt_query: str = f"{_search_str} {_yt_ctx}".strip()
                 else:
                     yt_query: str = f"{_search_str} news {_yt_ctx}".strip()
 
-                # Reddit / Twitter: append AI-decided context (region + time).
-                reddit_query: str = f"{_search_str} {_context_suffix}".strip()
-                twitter_query: str = f"{_search_str} {_context_suffix}".strip()
+                # Reddit / Twitter: use ONLY tokenized keywords (not natural language).
+                # Sending "new updates on biotechnology" to Reddit makes it return any
+                # popular post with "new" or "on" — which is everything. Strip to core.
+                reddit_query: str = f"{_kw_str} {_context_suffix}".strip()
+                twitter_query: str = f"{_kw_str} {_context_suffix}".strip()
 
                 # News RSS (Bing/Google): already date-filtered at source —
                 # only add region if AI detected one.
