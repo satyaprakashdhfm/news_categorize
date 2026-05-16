@@ -107,6 +107,17 @@ TOPIC_COMMUNITY_MAP: dict[str, list[str]] = {
 
 GENERIC_COMMUNITY_FALLBACK = ["worldnews", "science", "technology", "askscience", "todayilearned"]
 
+# Subreddits that are almost always off-topic for news/research queries.
+# These communities discuss personal life, relationship advice, and entertainment —
+# they match topic keywords (e.g. "biotechnology AITA") but are never useful results.
+_JUNK_SUBREDDITS = frozenset({
+    "amitheasshole", "relationship_advice", "relationships", "dating_advice",
+    "tifu", "confessions", "offmychest", "rant", "unpopularopinion",
+    "raisedbynarcissists", "survivorsofabuse", "abusiverelationships",
+    "casualconversation", "askwomenadvice", "askmenadvice", "pettyrevenge",
+    "entitledparents", "choosingbeggars", "antiwork", "mildlyinfuriating",
+})
+
 
 def _parse_proxy(proxy_url: str):
     """Return (proxy_str, proxy_auth) for aiohttp — splits credentials out of the URL
@@ -747,11 +758,14 @@ async def _fetch_reddit_global_search(
 
     posts_data: list[dict] = []
     async with aiohttp.ClientSession(headers=headers) as session:
-        # Try past 24h top posts first for maximum recency
+        # Primary: relevance sort past week — ranks by how well the post matches the query,
+        # not by how many upvotes it got. This is the most important fix for accuracy:
+        # "top" returns popular posts that mention a keyword; "relevance" returns posts
+        # that are actually ABOUT the topic.
         try:
             async with session.get(
                 "https://www.reddit.com/search.json",
-                params={"q": short_query, "sort": "top", "t": "day", "limit": str(safe_limit * 2), "type": "link"},
+                params={"q": short_query, "sort": "relevance", "t": "week", "limit": str(safe_limit * 2)},
                 timeout=aiohttp.ClientTimeout(total=20),
                 proxy=_proxy,
                 proxy_auth=_proxy_auth,
@@ -762,12 +776,12 @@ async def _fetch_reddit_global_search(
         except Exception:
             pass
 
-        # Fallback: past week top posts
+        # Fallback: top posts past week
         if not posts_data:
             try:
                 async with session.get(
                     "https://www.reddit.com/search.json",
-                    params={"q": short_query, "sort": "top", "t": "week", "limit": str(safe_limit * 2), "type": "link"},
+                    params={"q": short_query, "sort": "top", "t": "week", "limit": str(safe_limit * 2)},
                     timeout=aiohttp.ClientTimeout(total=20),
                     proxy=_proxy,
                     proxy_auth=_proxy_auth,
@@ -812,6 +826,11 @@ async def _fetch_reddit_global_search(
             _seen_titles.add(_title_key)
         deduped.append(d)
     posts_data = deduped
+
+    # ── Junk subreddit filter ────────────────────────────────────────────
+    # Strip known off-topic communities (AITA, relationships, etc.) before
+    # spending any LLM calls — these always pass keyword filters but are useless.
+    posts_data = [d for d in posts_data if (d.get("subreddit") or "").lower() not in _JUNK_SUBREDDITS]
 
     # ── Title keyword filter ─────────────────────────────────────────────
     # Rule: at least one NON-LOCATION keyword must appear in the post title.
@@ -1426,73 +1445,98 @@ async def run_live_browser_stream(
 
                 yield emit("step", f"  → {len(news_blogs)} total news articles (Bing + Google)")
 
-                # ── PHASE 3c: Twitter/X — Nitter HTML (Playwright) → Twitter direct fallback ──
+                # ── PHASE 3c: Hacker News (Algolia API — no browser needed) ──
+                hn_blogs: list[BlogItem] = []
+                try:
+                    import aiohttp as _aiohttp_hn
+                    import time as _time_hn
+                    _hn_week_ago = int(_time_hn.time()) - 7 * 86400
+                    _hn_q = _kw_str if _kw_str else _search_str
+                    _hn_api = (
+                        f"https://hn.algolia.com/api/v1/search_by_date"
+                        f"?query={quote_plus(_hn_q)}&tags=story"
+                        f"&hitsPerPage=10&numericFilters=created_at_i>{_hn_week_ago}"
+                    )
+                    yield emit("step", f"Hacker News (past week): '{_hn_q}'")
+                    async with _aiohttp_hn.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as _hn_s:
+                        async with _hn_s.get(_hn_api, timeout=_aiohttp_hn.ClientTimeout(total=10)) as _hn_r:
+                            if _hn_r.status == 200:
+                                _hn_data = await _hn_r.json()
+                                _hn_hits = _hn_data.get("hits", [])
+                                yield emit("step", f"  → {len(_hn_hits)} HN stories found")
+                                for hit in _hn_hits:
+                                    _hn_title = (hit.get("title") or "").strip()
+                                    _hn_url = hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID','')}"
+                                    _hn_text = (hit.get("story_text") or "")[:300]
+                                    if not _hn_title:
+                                        continue
+                                    hn_blogs.append(BlogItem(
+                                        source="hn",
+                                        title=_hn_title,
+                                        summary=_hn_text or f"Hacker News: {_hn_title}",
+                                        url=_hn_url,
+                                        channel="Hacker News",
+                                        score=hit.get("points") or 0,
+                                        comments=hit.get("num_comments") or 0,
+                                    ))
+                except Exception as _hn_err:
+                    logger.warning(f"[BROWSER] HN phase failed: {_hn_err}")
+                    yield emit("step", f"  → HN failed ({str(_hn_err)[:80]})")
+
+                # ── PHASE 3d: Twitter/X via Bing web search (Playwright) ──────────
+                # Nitter is dead. Bing web search for site:twitter.com returns actual
+                # tweet text in the result title/snippet — far better than Nitter or
+                # Bing News RSS which rarely returns real tweet content.
                 twitter_blogs: list[BlogItem] = []
                 try:
-                    _tw_query_enc = quote_plus(twitter_query)
-                    yield emit("step", f"Twitter/X search: '{twitter_query}'")
-                    tw_raw = []
-
-                    # --- Attempt 1: Nitter HTML instances via Playwright ---
-                    _nitter_search_urls = [
-                        f"https://nitter.privacydev.net/search?q={_tw_query_enc}&f=tweets",
-                        f"https://nitter.poast.org/search?q={_tw_query_enc}&f=tweets",
-                        f"https://nitter.1d4.us/search?q={_tw_query_enc}&f=tweets",
-                        f"https://nitter.net/search?q={_tw_query_enc}&f=tweets",
-                        f"https://nitter.tiekoetter.com/search?q={_tw_query_enc}&f=tweets",
-                        f"https://nitter.space/search?q={_tw_query_enc}&f=tweets",
-                        f"https://nitter.cz/search?q={_tw_query_enc}&f=tweets",
-                    ]
-                    for _nurl in _nitter_search_urls:
+                    yield emit("step", f"Twitter/X: Bing web search '{twitter_query}'...")
+                    _tw_bing_q = f"site:twitter.com OR site:x.com {twitter_query}"
+                    _tw_bing_url = f"https://www.bing.com/search?q={quote_plus(_tw_bing_q)}&freshness=Week"
+                    for ev in await nav(_tw_bing_url, t=20000):
+                        yield ev
+                    await asyncio.sleep(2)
+                    tw_raw = await page.evaluate("""
+                        () => {
+                            const items = [];
+                            document.querySelectorAll('#b_results li.b_algo').forEach(el => {
+                                const a = el.querySelector('h2 a');
+                                const snippet = el.querySelector('.b_caption .b_snippet, .b_caption p');
+                                if (!a) return;
+                                const url = a.href || '';
+                                const title = a.textContent.trim();
+                                const text = (snippet?.textContent || '').trim();
+                                if (!url.includes('twitter.com') && !url.includes('x.com')) return;
+                                if (!title) return;
+                                items.push({ title: (text || title).slice(0, 200), url, author: '' });
+                            });
+                            return items.slice(0, 12);
+                        }
+                    """)
+                    if tw_raw:
+                        yield emit("step", f"  → {len(tw_raw)} tweets via Bing web search")
+                    else:
+                        # Fallback: Bing News RSS site:x.com
+                        yield emit("step", "  → No Bing web results, trying Bing News RSS...")
+                        tw_raw = []
                         try:
-                            for ev in await nav(_nurl, t=12000):
-                                yield ev
-                            tw_raw = await page.evaluate("""
-                                () => {
-                                    const items = [];
-                                    document.querySelectorAll('.timeline-item').forEach(el => {
-                                        const text = (el.querySelector('.tweet-content')?.innerText || '').trim();
-                                        const href = el.querySelector('.tweet-link')?.getAttribute('href') || '';
-                                        const user = (el.querySelector('.username')?.innerText || '').trim();
-                                        if (text.length < 10 || !href) return;
-                                        const url = href.startsWith('http') ? href : 'https://twitter.com' + href;
-                                        items.push({ title: text.slice(0, 200), url, author: user });
-                                    });
-                                    return items.slice(0, 20);
-                                }
-                            """)
-                            if tw_raw:
-                                yield emit("step", f"  → {len(tw_raw)} tweets via Nitter ({_nurl.split('/')[2]})")
-                                break
-                            else:
-                                yield emit("step", f"  → {_nurl.split('/')[2]} — no results, trying next...")
-                        except Exception:
-                            yield emit("step", f"  → {_nurl.split('/')[2]} failed, trying next...")
-                            continue
-
-                    # --- Attempt 2: Bing web search for site:x.com (no login needed) ---
-                    if not tw_raw:
-                        yield emit("step", "  → Nitter unavailable, trying Bing site:x.com search...")
-                        try:
-                            import aiohttp
-                            import xml.etree.ElementTree as _ET
+                            import aiohttp as _aiohttp_tw
+                            import xml.etree.ElementTree as _ET_tw
                             _bing_tw_url = f"https://www.bing.com/news/search?q={quote_plus('site:x.com ' + twitter_query)}&format=RSS"
-                            async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as _sess:
-                                async with _sess.get(_bing_tw_url, timeout=aiohttp.ClientTimeout(total=10)) as _r:
-                                    _xml = await _r.text()
-                            _root = _ET.fromstring(_xml)
-                            for _item in _root.findall(".//item")[:15]:
+                            async with _aiohttp_tw.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as _tw_s:
+                                async with _tw_s.get(_bing_tw_url, timeout=_aiohttp_tw.ClientTimeout(total=10)) as _tw_r:
+                                    _tw_xml = await _tw_r.text()
+                            _tw_root = _ET_tw.fromstring(_tw_xml)
+                            for _item in _tw_root.findall(".//item")[:12]:
                                 _t = (_item.findtext("title") or "").strip()
                                 _link = (_item.findtext("link") or "").strip()
                                 if _t and _link and ("x.com" in _link or "twitter.com" in _link):
                                     tw_raw.append({"title": _t[:200], "url": _link, "author": ""})
                             if tw_raw:
-                                yield emit("step", f"  → {len(tw_raw)} tweets via Bing site:x.com")
+                                yield emit("step", f"  → {len(tw_raw)} tweets via Bing News RSS")
                             else:
-                                yield emit("step", "  → no Twitter results from Bing either")
-                        except Exception as _bing_tw_err:
-                            yield emit("step", f"  → Bing Twitter fallback failed ({str(_bing_tw_err)[:60]})")
-
+                                yield emit("step", "  → Twitter: no results from any source")
+                        except Exception as _fb_err:
+                            yield emit("step", f"  → Twitter all sources failed ({str(_fb_err)[:60]})")
                     if tw_raw:
                         async def _sum_tweet(a: dict) -> BlogItem:
                             async with sem:
@@ -1500,18 +1544,68 @@ async def run_live_browser_stream(
                                 _merge_usage(usage_totals, u)
                                 return BlogItem(source="twitter", title=a["title"], summary=summary,
                                                 url=a["url"], author=a.get("author"))
-                        twitter_blogs = list(await asyncio.gather(*[_sum_tweet(a) for a in tw_raw]))
-                    else:
-                        yield emit("step", "  → Twitter: no results from any source")
+                        twitter_blogs = list(await asyncio.gather(*[_sum_tweet(a) for a in (tw_raw or [])]))
                 except Exception as _tw_err:
                     logger.warning(f"[BROWSER] Twitter phase failed: {_tw_err}")
                     yield emit("step", f"  → Twitter failed ({type(_tw_err).__name__}: {str(_tw_err)[:80]})")
 
-                yield emit("step", f"Closing browser... (reddit={len(reddit_blogs)}, yt={len(youtube_blogs)}, news={len(news_blogs)}, twitter={len(twitter_blogs)})")
+                # ── PHASE 3e: Blog / Opinion (DuckDuckGo Lite via Playwright) ────
+                # Finds personal blog posts, expert analysis, and opinion pieces that
+                # news aggregators miss. DuckDuckGo Lite is scraper-friendly and
+                # doesn't require JavaScript to render results.
+                blog_blogs: list[BlogItem] = []
+                try:
+                    _blog_q = f"{_search_str} analysis opinion blog expert"
+                    _ddg_url = f"https://html.duckduckgo.com/html/?q={quote_plus(_blog_q)}"
+                    yield emit("step", f"Blog/Opinion search: '{_blog_q}'")
+                    for ev in await nav(_ddg_url, t=15000):
+                        yield ev
+                    await asyncio.sleep(1)
+                    _blog_raw = await page.evaluate("""
+                        () => {
+                            const SKIP = ['reddit.com','twitter.com','x.com','youtube.com',
+                                          'google.com','bing.com','facebook.com','instagram.com','tiktok.com'];
+                            const items = [];
+                            document.querySelectorAll('.result__body, .result').forEach(el => {
+                                const a = el.querySelector('.result__a, h2.result__title a, a.result__a');
+                                const snip = el.querySelector('.result__snippet');
+                                if (!a) return;
+                                const rawHref = a.href || '';
+                                let url = rawHref;
+                                if (rawHref.includes('uddg=')) {
+                                    try { url = decodeURIComponent(rawHref.split('uddg=')[1].split('&')[0]); } catch(e){}
+                                }
+                                const title = a.textContent.trim();
+                                const text = (snip?.textContent || '').trim();
+                                if (!url.startsWith('http') || !title) return;
+                                if (SKIP.some(d => url.includes(d))) return;
+                                items.push({ title, url, snippet: text });
+                            });
+                            return items.slice(0, 8);
+                        }
+                    """)
+                    yield emit("step", f"  → {len(_blog_raw or [])} blog/opinion results")
+                    for _ba in (_blog_raw or []):
+                        _ba_title = (_ba.get("title") or "").strip()
+                        _ba_url = (_ba.get("url") or "").strip()
+                        _ba_snip = (_ba.get("snippet") or "").strip()
+                        if not _ba_title or not _ba_url:
+                            continue
+                        blog_blogs.append(BlogItem(
+                            source="blog",
+                            title=_ba_title,
+                            summary=_ba_snip or f"Blog post: {_ba_title}",
+                            url=_ba_url,
+                        ))
+                except Exception as _blog_err:
+                    logger.warning(f"[BROWSER] Blog phase failed: {_blog_err}")
+                    yield emit("step", f"  → Blog search failed ({str(_blog_err)[:80]})")
+
+                yield emit("step", f"Closing browser... (reddit={len(reddit_blogs)}, yt={len(youtube_blogs)}, news={len(news_blogs)}, twitter={len(twitter_blogs)}, hn={len(hn_blogs)}, blogs={len(blog_blogs)})")
                 await browser.close()
 
                 # ── Combine ────────────────────────────────────────────────
-                all_blogs: list[BlogItem] = reddit_blogs + youtube_blogs + news_blogs + twitter_blogs
+                all_blogs: list[BlogItem] = reddit_blogs + youtube_blogs + news_blogs + twitter_blogs + hn_blogs + blog_blogs
                 yield emit("step", f"Total collected: {len(all_blogs)} items. Running AI relevance check...")
 
                 # ── AI title filter (1 LLM call, titles only) ──────────────

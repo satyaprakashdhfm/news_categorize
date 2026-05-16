@@ -436,11 +436,12 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
             <section className="panel panel--compact">
               <h2 className="panel__title" style={{ marginBottom: 12 }}>Sources</h2>
               <ul className="sources">
-                <li className="src is-on"><span className="src__glyph">R</span><span className="src__name">Reddit</span><span className="meta">dynamic</span></li>
-                <li className="src is-on"><span className="src__glyph">Y</span><span className="src__name">YouTube</span><span className="meta">dynamic</span></li>
-                <li className="src is-on"><span className="src__glyph">G</span><span className="src__name">Google News</span><span className="meta">scrape</span></li>
-                <li className="src"><span className="src__glyph">X</span><span className="src__name">X / Twitter</span><span className="meta">beta</span></li>
-                <li className="src"><span className="src__glyph">H</span><span className="src__name">HN / Lobsters</span><span className="meta">beta</span></li>
+                <li className="src is-on"><span className="src__glyph">R</span><span className="src__name">Reddit</span><span className="meta">relevance</span></li>
+                <li className="src is-on"><span className="src__glyph">Y</span><span className="src__name">YouTube</span><span className="meta">search</span></li>
+                <li className="src is-on"><span className="src__glyph">G</span><span className="src__name">Bing + Google News</span><span className="meta">RSS</span></li>
+                <li className="src is-on"><span className="src__glyph">H</span><span className="src__name">Hacker News</span><span className="meta">Algolia</span></li>
+                <li className="src is-on"><span className="src__glyph">X</span><span className="src__name">X / Twitter</span><span className="meta">Bing web</span></li>
+                <li className="src is-on"><span className="src__glyph">B</span><span className="src__name">Blogs / Opinion</span><span className="meta">DDG</span></li>
               </ul>
             </section>
 
@@ -560,15 +561,15 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
             </div>
 
             {/* Source filter */}
-            <div style={{ display: 'flex', gap: 4 }}>
-              {['all', 'reddit', 'youtube', 'news'].map((f) => (
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {['all', 'reddit', 'youtube', 'news', 'twitter', 'hn', 'blog'].map((f) => (
                 <button
                   key={f}
                   onClick={() => setSourceFilter(f)}
                   className={`fchip ${sourceFilter === f ? 'is-on' : ''}`}
                   style={{ textTransform: 'uppercase', fontWeight: 600 }}
                 >
-                  {f}
+                  {f === 'hn' ? 'HackerNews' : f}
                 </button>
               ))}
             </div>
@@ -581,8 +582,18 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
                 const summary = compact(b.summary || '');
                 const shownSummary = isExpanded ? (b.summary || '') : summary.text;
 
-                const sourceColor = b.source === 'reddit' ? '#E8913C' : b.source === 'youtube' ? 'var(--signal-critical)' : 'var(--accent)';
-                const sourceBg = b.source === 'reddit' ? 'rgba(232,145,60,0.12)' : b.source === 'youtube' ? 'rgba(240,110,110,0.12)' : 'var(--accent-soft)';
+                const sourceColor = b.source === 'reddit' ? '#E8913C'
+                  : b.source === 'youtube' ? 'var(--signal-critical)'
+                  : b.source === 'twitter' ? '#1DA1F2'
+                  : b.source === 'hn' ? '#FF6600'
+                  : b.source === 'blog' ? '#9B59B6'
+                  : 'var(--accent)';
+                const sourceBg = b.source === 'reddit' ? 'rgba(232,145,60,0.12)'
+                  : b.source === 'youtube' ? 'rgba(240,110,110,0.12)'
+                  : b.source === 'twitter' ? 'rgba(29,161,242,0.10)'
+                  : b.source === 'hn' ? 'rgba(255,102,0,0.10)'
+                  : b.source === 'blog' ? 'rgba(155,89,182,0.10)'
+                  : 'var(--accent-soft)';
 
                 return (
                   <article key={key} className="card" style={{ gap: 10 }}>
