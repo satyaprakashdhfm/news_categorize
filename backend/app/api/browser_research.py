@@ -813,38 +813,31 @@ async def _fetch_reddit_global_search(
         deduped.append(d)
     posts_data = deduped
 
-    # ── Title keyword filter ───────────────────────────────────────────────
-    # Keep posts whose title contains at least 1 search keyword.
+    # ── Title keyword filter ─────────────────────────────────────────────
+    # Rule: at least one NON-LOCATION keyword must appear in the post title.
+    # We never use the subreddit name as a match — that's how r/india posts
+    # about relationships/AITA slip through even for aircraft-engine queries.
+    _LOCATION_WORDS = {"india", "indian", "pakistan", "china", "chinese", "us", "usa", "american", "uk", "british", "russia", "russian"}
     meaningful_kw = set(kw)
-    # Words that are too generic to qualify a post on their own (country/region names).
-    _LOCATION_WORDS = {"india", "indian", "pakistan", "china", "chinese", "us", "usa", "american", "uk", "british"}
-    # Domain terms: if title only matched via location words, require at least one of these.
-    _DOMAIN_TERMS = {
-        "aircraft", "engine", "fighter", "jet", "aviation", "flight", "missile",
-        "drone", "military", "defence", "defense", "air", "force", "pilot",
-        "helicopter", "rocket", "aerospace", "weapon", "army", "navy",
-        "tejas", "kaveri", "drdo", "hal", "amca", "rafale", "sukhoi", "mig",
-    }
+    non_loc_kw = meaningful_kw - _LOCATION_WORDS  # keywords that actually describe the topic
+
     if meaningful_kw:
         filtered: list[dict] = []
         for d in posts_data:
             title_kw = _tokenize_meaningful(d.get("title", ""))
-            matched = meaningful_kw.intersection(title_kw)
-            if not matched:
-                # No keyword match in title — try subreddit name as fallback
-                sub_kw = _tokenize_meaningful(d.get("subreddit") or "")
-                if not meaningful_kw.intersection(sub_kw):
+            if non_loc_kw:
+                # Topic has specific non-location keywords (e.g. "aircraft", "engine")
+                # → title must contain at least one of them
+                if not non_loc_kw.intersection(title_kw):
                     continue
-                matched = meaningful_kw.intersection(sub_kw)
-            # If every matched keyword is a generic location word, require a domain term in title
-            non_location = matched - _LOCATION_WORDS
-            if not non_location:
-                title_lower = d.get("title", "").lower()
-                if not any(t in title_lower for t in _DOMAIN_TERMS):
-                    continue  # only matched "india" with no aviation/defence context
+            else:
+                # Query is only location words (e.g. "india news") — fall back to
+                # requiring any meaningful keyword at all in the title
+                if not meaningful_kw.intersection(title_kw):
+                    continue
             filtered.append(d)
-        # Safety: if filter removed everything, fall back to unfiltered
-        posts_data = filtered if len(filtered) >= 3 else (filtered or posts_data)
+        # Never fall back to unfiltered — empty is better than 30 junk posts
+        posts_data = filtered
 
     usage_totals = _empty_usage()
     posts = []
