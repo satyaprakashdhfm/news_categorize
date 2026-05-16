@@ -562,8 +562,11 @@ async def _batch_title_filter(
 
         if keep_nums:
             kept = [it for i, it in enumerate(items) if (i + 1) in keep_nums]
-            # Sanity: if LLM drops >75% it probably misfired — keep all
-            if len(kept) >= max(3, len(items) * 0.25):
+            # Trust the AI as long as it kept at least 3 items.
+            # Old 25%-threshold was wrong: a specific query like "India aircraft engine"
+            # legitimately has only 4-6 relevant posts out of 35 — filtering to 5 is correct,
+            # not a misfire. Only truly misfired if AI says <3 items are relevant.
+            if len(kept) >= 3:
                 dropped = len(items) - len(kept)
                 return kept, f"AI kept {len(kept)}/{len(items)}, dropped {dropped} off-topic"
     except Exception as _e:
@@ -794,15 +797,19 @@ async def _fetch_reddit_global_search(
     if not posts_data:
         return [], _empty_usage()
 
-    # ── Dedup by URL/permalink (Reddit sometimes returns same post twice) ──
+    # ── Dedup by URL/permalink AND by title (catches crossposts) ──────────
     _seen_urls: set[str] = set()
+    _seen_titles: set[str] = set()
     deduped: list[dict] = []
     for d in posts_data:
         _url_key = d.get("permalink") or d.get("url") or d.get("id") or ""
-        if _url_key and _url_key in _seen_urls:
+        _title_key = " ".join((d.get("title") or "").lower().split()[:8])  # first 8 words
+        if (_url_key and _url_key in _seen_urls) or (_title_key and _title_key in _seen_titles):
             continue
         if _url_key:
             _seen_urls.add(_url_key)
+        if _title_key:
+            _seen_titles.add(_title_key)
         deduped.append(d)
     posts_data = deduped
 
@@ -1433,6 +1440,8 @@ async def run_live_browser_stream(
                         f"https://nitter.1d4.us/search?q={_tw_query_enc}&f=tweets",
                         f"https://nitter.net/search?q={_tw_query_enc}&f=tweets",
                         f"https://nitter.tiekoetter.com/search?q={_tw_query_enc}&f=tweets",
+                        f"https://nitter.space/search?q={_tw_query_enc}&f=tweets",
+                        f"https://nitter.cz/search?q={_tw_query_enc}&f=tweets",
                     ]
                     for _nurl in _nitter_search_urls:
                         try:
@@ -1457,41 +1466,32 @@ async def run_live_browser_stream(
                                 break
                             else:
                                 yield emit("step", f"  → {_nurl.split('/')[2]} — no results, trying next...")
-                        except Exception as _ni_err:
+                        except Exception:
                             yield emit("step", f"  → {_nurl.split('/')[2]} failed, trying next...")
                             continue
 
-                    # --- Attempt 2: Twitter/X directly via Playwright ---
+                    # --- Attempt 2: Bing web search for site:x.com (no login needed) ---
                     if not tw_raw:
-                        yield emit("step", "  → trying Twitter/X directly...")
+                        yield emit("step", "  → Nitter unavailable, trying Bing site:x.com search...")
                         try:
-                            _tw_direct = f"https://x.com/search?q={_tw_query_enc}&f=live&src=typed_query"
-                            for ev in await nav(_tw_direct, t=25000):
-                                yield ev
-                            await asyncio.sleep(4)
-                            tw_raw = await page.evaluate("""
-                                () => {
-                                    const items = [];
-                                    document.querySelectorAll('[data-testid="tweet"]').forEach(el => {
-                                        const text = (el.querySelector('[data-testid="tweetText"]')?.innerText || '').trim();
-                                        const link = el.querySelector('a[href*="/status/"]');
-                                        const user = (el.querySelector('[data-testid="User-Name"]')?.innerText || '').trim();
-                                        if (text.length < 10) return;
-                                        items.push({
-                                            title: text.slice(0, 200),
-                                            url: link?.href || 'https://x.com',
-                                            author: user,
-                                        });
-                                    });
-                                    return items.slice(0, 20);
-                                }
-                            """)
+                            import aiohttp
+                            import xml.etree.ElementTree as _ET
+                            _bing_tw_url = f"https://www.bing.com/news/search?q={quote_plus('site:x.com ' + twitter_query)}&format=RSS"
+                            async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as _sess:
+                                async with _sess.get(_bing_tw_url, timeout=aiohttp.ClientTimeout(total=10)) as _r:
+                                    _xml = await _r.text()
+                            _root = _ET.fromstring(_xml)
+                            for _item in _root.findall(".//item")[:15]:
+                                _t = (_item.findtext("title") or "").strip()
+                                _link = (_item.findtext("link") or "").strip()
+                                if _t and _link and ("x.com" in _link or "twitter.com" in _link):
+                                    tw_raw.append({"title": _t[:200], "url": _link, "author": ""})
                             if tw_raw:
-                                yield emit("step", f"  → {len(tw_raw)} tweets from Twitter/X directly")
+                                yield emit("step", f"  → {len(tw_raw)} tweets via Bing site:x.com")
                             else:
-                                yield emit("step", "  → Twitter/X requires login or returned nothing")
-                        except Exception as _tw_direct_err:
-                            yield emit("step", f"  → Twitter direct failed ({str(_tw_direct_err)[:60]})")
+                                yield emit("step", "  → no Twitter results from Bing either")
+                        except Exception as _bing_tw_err:
+                            yield emit("step", f"  → Bing Twitter fallback failed ({str(_bing_tw_err)[:60]})")
 
                     if tw_raw:
                         async def _sum_tweet(a: dict) -> BlogItem:
