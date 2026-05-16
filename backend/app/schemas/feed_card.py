@@ -55,6 +55,7 @@ class AttachRunResponse(BaseModel):
     merged: bool
     card_id: str
     message: str
+    auto_pinned: bool = False
 
 
 class PinCardRequest(BaseModel):

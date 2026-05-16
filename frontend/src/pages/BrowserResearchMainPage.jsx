@@ -7,8 +7,8 @@ import { CATEGORIES, SUBCATEGORY_CODES, SUBCATEGORY_LABELS } from '@/utils/helpe
 
 const SUMMARY_PREVIEW_CHARS = 240;
 
-function AddToFeedBtn({ cardId }) {
-  const [pinned, setPinned] = useState(false);
+function AddToFeedBtn({ cardId, initialPinned = false }) {
+  const [pinned, setPinned] = useState(initialPinned);
   const [busy, setBusy] = useState(false);
 
   const handleAdd = async (e) => {
@@ -485,7 +485,7 @@ export default function BrowserResearchMainPage({ isDark, toggleDark }) {
                     <span style={{ fontSize: 'var(--t-meta)', fontWeight: 500, color: attachResult.merged ? 'var(--accent)' : 'var(--signal-positive)' }}>
                       {attachResult.merged ? '🔀' : '✓'} {attachResult.message}
                     </span>
-                    {isAuthenticated && attachResult.card_id && <AddToFeedBtn cardId={attachResult.card_id} />}
+                    {isAuthenticated && attachResult.card_id && <AddToFeedBtn cardId={attachResult.card_id} initialPinned={!!attachResult.auto_pinned} />}
                   </div>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>

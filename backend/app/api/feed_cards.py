@@ -539,13 +539,28 @@ def attach_run(
         is_near_match = ratio_val >= 0.85
         if is_near_match or _ai_same_topic(payload.query, candidate.title or ""):
             candidate.run_id = payload.run_id
+            auto_pinned = False
+            if current_user:
+                already = db.query(UserFeedCard).filter(
+                    UserFeedCard.user_id == current_user.id,
+                    UserFeedCard.card_id == candidate.id,
+                ).first()
+                if not already:
+                    db.add(UserFeedCard(
+                        id=str(uuid.uuid4()),
+                        user_id=current_user.id,
+                        card_id=candidate.id,
+                        position=0,
+                    ))
+                    candidate.pinned_count = (candidate.pinned_count or 0) + 1
+                    auto_pinned = True
             db.commit()
             msg = (
                 f"Updated existing card: '{candidate.title}'"
                 if is_near_match
                 else f"Merged into existing card: '{candidate.title}' (AI confirmed same topic)"
             )
-            return AttachRunResponse(merged=True, card_id=candidate.id, message=msg)
+            return AttachRunResponse(merged=True, card_id=candidate.id, message=msg, auto_pinned=auto_pinned)
 
     # Case 3: no match → new card; auto-classify domain/subdomain via AI
     auto_domain, auto_subdomain = None, None
@@ -567,7 +582,20 @@ def attach_run(
     db.add(card)
     db.commit()
     db.refresh(card)
-    return AttachRunResponse(merged=False, card_id=card.id, message="Created new card (private to your feed)")
+    _stamp_run(payload.run_id, card.id)
+    auto_pinned = False
+    if current_user:
+        db.add(UserFeedCard(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            card_id=card.id,
+            position=0,
+        ))
+        card.pinned_count = 1
+        db.commit()
+        auto_pinned = True
+    msg = "Saved to your feed" if auto_pinned else "Created new card (sign in to save)"
+    return AttachRunResponse(merged=False, card_id=card.id, message=msg, auto_pinned=auto_pinned)
 
 
 # ── Admin: seed predefined domain cards ─────────────────────────────────────
