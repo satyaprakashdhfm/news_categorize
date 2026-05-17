@@ -20,6 +20,8 @@ const SOURCE_COLORS = {
   youtube: { bg: 'rgba(240,110,110,0.12)', color: 'var(--signal-critical)' },
   news: { bg: 'var(--accent-soft)', color: 'var(--accent)' },
   twitter: { bg: 'rgba(29,161,242,0.12)', color: '#1DA1F2' },
+  hn: { bg: 'rgba(255,102,0,0.12)', color: '#FF6600' },
+  blog: { bg: 'rgba(155,89,182,0.12)', color: '#9B59B6' },
 };
 
 function todayParam() {

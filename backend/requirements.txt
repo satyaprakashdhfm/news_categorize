@@ -31,3 +31,4 @@ w3lib==2.3.1
 yt-dlp==2026.3.17
 playwright==1.51.0
 apscheduler==3.10.4
+twscrape==0.17.0

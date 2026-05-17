@@ -35,6 +35,32 @@ router = APIRouter(prefix="/api/browser-research", tags=["browser-research"])
 from app.core.ollama_client import get_llm_client, get_active_model
 GEMINI_MODEL = get_active_model()
 
+# ── twscrape singleton — initialised once, cookies cached in SQLite ────────
+_twscrape_api = None
+
+async def _get_twscrape_api():
+    """Return a ready twscrape API or None if credentials not set."""
+    global _twscrape_api
+    if _twscrape_api is not None:
+        return _twscrape_api
+    import os
+    username = os.environ.get("TWITTER_USERNAME", "").strip()
+    password = os.environ.get("TWITTER_PASSWORD", "").strip()
+    email    = os.environ.get("TWITTER_EMAIL", "").strip()
+    if not (username and password and email):
+        return None
+    try:
+        from twscrape import API
+        api = API("/tmp/twscrape_accounts.db")
+        await api.pool.add_account(username, password, email, "")
+        await api.pool.login_all()
+        _twscrape_api = api
+        logger.info("[TWSCRAPE] Authenticated OK")
+        return api
+    except Exception as exc:
+        logger.warning(f"[TWSCRAPE] Init failed: {exc}")
+        return None
+
 
 AI_EXPLORE_COMMUNITIES = [
     {"name": "isthisAI", "weekly_visitors": 3_100_000},
@@ -1485,41 +1511,68 @@ async def run_live_browser_stream(
                     logger.warning(f"[BROWSER] HN phase failed: {_hn_err}")
                     yield emit("step", f"  → HN failed ({str(_hn_err)[:80]})")
 
-                # ── PHASE 3d: Twitter/X via Bing web search (Playwright) ──────────
-                # Nitter is dead. Bing web search for site:twitter.com returns actual
-                # tweet text in the result title/snippet — far better than Nitter or
-                # Bing News RSS which rarely returns real tweet content.
+                # ── PHASE 3d: Twitter/X ───────────────────────────────────────────────
+                # Primary: twscrape (real account, actual tweet text, best quality).
+                # Fallback: Bing web search site:twitter.com (no login, snippet-level).
+                # Last resort: Bing News RSS site:x.com.
                 twitter_blogs: list[BlogItem] = []
                 try:
-                    yield emit("step", f"Twitter/X: Bing web search '{twitter_query}'...")
-                    _tw_bing_q = f"site:twitter.com OR site:x.com {twitter_query}"
-                    _tw_bing_url = f"https://www.bing.com/search?q={quote_plus(_tw_bing_q)}&freshness=Week"
-                    for ev in await nav(_tw_bing_url, t=20000):
-                        yield ev
-                    await asyncio.sleep(2)
-                    tw_raw = await page.evaluate("""
-                        () => {
-                            const items = [];
-                            document.querySelectorAll('#b_results li.b_algo').forEach(el => {
-                                const a = el.querySelector('h2 a');
-                                const snippet = el.querySelector('.b_caption .b_snippet, .b_caption p');
-                                if (!a) return;
-                                const url = a.href || '';
-                                const title = a.textContent.trim();
-                                const text = (snippet?.textContent || '').trim();
-                                if (!url.includes('twitter.com') && !url.includes('x.com')) return;
-                                if (!title) return;
-                                items.push({ title: (text || title).slice(0, 200), url, author: '' });
-                            });
-                            return items.slice(0, 12);
-                        }
-                    """)
-                    if tw_raw:
-                        yield emit("step", f"  → {len(tw_raw)} tweets via Bing web search")
-                    else:
-                        # Fallback: Bing News RSS site:x.com
-                        yield emit("step", "  → No Bing web results, trying Bing News RSS...")
-                        tw_raw = []
+                    tw_raw = []
+                    yield emit("step", f"Twitter/X search: '{twitter_query}'...")
+
+                    # --- Attempt 1: twscrape (authenticated, full tweet text) ---
+                    _tw_api = await _get_twscrape_api()
+                    if _tw_api:
+                        try:
+                            from twscrape import gather as _tw_gather
+                            yield emit("step", "  → twscrape: authenticated search...")
+                            _tweets = await _tw_gather(_tw_api.search(twitter_query, limit=12))
+                            for t in _tweets:
+                                _text = (getattr(t, "rawContent", None) or "").strip()
+                                if len(_text) < 10:
+                                    continue
+                                _uname = getattr(getattr(t, "user", None), "username", "") or ""
+                                _tid   = getattr(t, "id", "")
+                                _url   = f"https://twitter.com/{_uname}/status/{_tid}" if _uname and _tid else ""
+                                tw_raw.append({"title": _text[:280], "url": _url, "author": f"@{_uname}"})
+                            if tw_raw:
+                                yield emit("step", f"  → {len(tw_raw)} tweets via twscrape")
+                        except Exception as _tws_err:
+                            logger.warning(f"[TWSCRAPE] Search failed: {_tws_err}")
+                            yield emit("step", f"  → twscrape failed ({str(_tws_err)[:60]}), trying Bing...")
+                            global _twscrape_api
+                            _twscrape_api = None  # reset so next run re-authenticates
+
+                    # --- Attempt 2: Bing web search site:twitter.com (Playwright) ---
+                    if not tw_raw:
+                        _tw_bing_q = f"site:twitter.com OR site:x.com {twitter_query}"
+                        _tw_bing_url = f"https://www.bing.com/search?q={quote_plus(_tw_bing_q)}&freshness=Week"
+                        for ev in await nav(_tw_bing_url, t=20000):
+                            yield ev
+                        await asyncio.sleep(2)
+                        tw_raw = await page.evaluate("""
+                            () => {
+                                const items = [];
+                                document.querySelectorAll('#b_results li.b_algo').forEach(el => {
+                                    const a = el.querySelector('h2 a');
+                                    const snippet = el.querySelector('.b_caption .b_snippet, .b_caption p');
+                                    if (!a) return;
+                                    const url = a.href || '';
+                                    const title = a.textContent.trim();
+                                    const text = (snippet?.textContent || '').trim();
+                                    if (!url.includes('twitter.com') && !url.includes('x.com')) return;
+                                    if (!title) return;
+                                    items.push({ title: (text || title).slice(0, 200), url, author: '' });
+                                });
+                                return items.slice(0, 10);
+                            }
+                        """)
+                        if tw_raw:
+                            yield emit("step", f"  → {len(tw_raw)} tweets via Bing web search")
+
+                    # --- Attempt 3: Bing News RSS (last resort) ---
+                    if not tw_raw:
+                        yield emit("step", "  → trying Bing News RSS fallback...")
                         try:
                             import aiohttp as _aiohttp_tw
                             import xml.etree.ElementTree as _ET_tw
@@ -1528,7 +1581,7 @@ async def run_live_browser_stream(
                                 async with _tw_s.get(_bing_tw_url, timeout=_aiohttp_tw.ClientTimeout(total=10)) as _tw_r:
                                     _tw_xml = await _tw_r.text()
                             _tw_root = _ET_tw.fromstring(_tw_xml)
-                            for _item in _tw_root.findall(".//item")[:12]:
+                            for _item in _tw_root.findall(".//item")[:10]:
                                 _t = (_item.findtext("title") or "").strip()
                                 _link = (_item.findtext("link") or "").strip()
                                 if _t and _link and ("x.com" in _link or "twitter.com" in _link):
@@ -1538,7 +1591,8 @@ async def run_live_browser_stream(
                             else:
                                 yield emit("step", "  → Twitter: no results from any source")
                         except Exception as _fb_err:
-                            yield emit("step", f"  → Twitter all sources failed ({str(_fb_err)[:60]})")
+                            yield emit("step", f"  → all Twitter sources failed ({str(_fb_err)[:60]})")
+
                     if tw_raw:
                         async def _sum_tweet(a: dict) -> BlogItem:
                             async with sem:
@@ -1546,7 +1600,7 @@ async def run_live_browser_stream(
                                 _merge_usage(usage_totals, u)
                                 return BlogItem(source="twitter", title=a["title"], summary=summary,
                                                 url=a["url"], author=a.get("author"))
-                        twitter_blogs = list(await asyncio.gather(*[_sum_tweet(a) for a in (tw_raw or [])]))
+                        twitter_blogs = list(await asyncio.gather(*[_sum_tweet(a) for a in tw_raw]))
                 except Exception as _tw_err:
                     logger.warning(f"[BROWSER] Twitter phase failed: {_tw_err}")
                     yield emit("step", f"  → Twitter failed ({type(_tw_err).__name__}: {str(_tw_err)[:80]})")

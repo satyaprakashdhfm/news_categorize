@@ -577,7 +577,7 @@ def attach_run(
         subdomain=(payload.subdomain.upper() if payload.subdomain else auto_subdomain),
         run_id=payload.run_id,
         created_by=current_user.id if current_user else None,
-        is_global=False,
+        is_global=True,
     )
     db.add(card)
     db.commit()

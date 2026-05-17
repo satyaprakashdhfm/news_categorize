@@ -16,6 +16,7 @@ class BrowserResearchRun(Base):
     youtube_channels_used = Column(Text, nullable=False, default="[]")
     total_blogs = Column(Integer, nullable=False, default=0)
     created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    card_id = Column(String, ForeignKey("feed_cards.id", ondelete="SET NULL"), nullable=True, index=True)
     generated_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     items = relationship(
