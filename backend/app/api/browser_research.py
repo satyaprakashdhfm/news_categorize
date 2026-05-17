@@ -766,6 +766,104 @@ async def _fetch_reddit_posts_for_community(
     return posts[:safe_limit], usage_totals, ""
 
 
+async def _fetch_reddit_via_bing(
+    query: str,
+    reddit_query: str,
+    limit: int = 5,
+    client=None,
+) -> tuple[list["BlogItem"], dict]:
+    """Find Reddit posts via Bing site:reddit.com, then fetch each post's .json for full content."""
+    import aiohttp
+    from urllib.parse import quote_plus as _qp
+    from bs4 import BeautifulSoup as _BS
+
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    bing_url = f"https://www.bing.com/search?q={_qp('site:reddit.com/r/ ' + reddit_query)}&freshness=Month"
+
+    # Step 1: Bing → extract Reddit post URLs
+    reddit_urls: list[str] = []
+    try:
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(bing_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    soup = _BS(await resp.text(), "lxml")
+                    for a in soup.select("#b_results li.b_algo h2 a"):
+                        href = a.get("href", "")
+                        if "reddit.com/r/" in href and "/comments/" in href:
+                            reddit_urls.append(href)
+    except Exception as _e:
+        logger.warning(f"[REDDIT_BING] Bing search failed: {_e}")
+
+    if not reddit_urls:
+        return [], _empty_usage()
+
+    kw = list(_tokenize_meaningful(query))
+    meaningful_kw = set(kw)
+    _LOC = {"india", "indian", "pakistan", "china", "chinese", "us", "usa", "american", "uk", "british", "russia", "russian"}
+    non_loc_kw = meaningful_kw - _LOC
+
+    # Step 2: Fetch each post as .json → full title + selftext
+    posts_data: list[dict] = []
+    async with aiohttp.ClientSession(headers=headers) as session:
+        for url in reddit_urls[:limit * 3]:
+            try:
+                clean = url.split("?")[0].rstrip("/")
+                if "reddit.com" not in clean:
+                    continue
+                json_url = clean + ".json"
+                async with session.get(json_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                    post = data[0]["data"]["children"][0]["data"]
+                    title = (post.get("title") or "").strip()
+                    selftext = (post.get("selftext") or "").strip()
+                    subreddit = (post.get("subreddit") or "").lower()
+                    if not title or subreddit in _JUNK_SUBREDDITS:
+                        continue
+                    if meaningful_kw:
+                        title_kw = _tokenize_meaningful(title)
+                        check = non_loc_kw if non_loc_kw else meaningful_kw
+                        if not check.intersection(title_kw):
+                            continue
+                    permalink = post.get("permalink") or ""
+                    posts_data.append({
+                        "title": title,
+                        "selftext": selftext[:1000],
+                        "subreddit": subreddit,
+                        "author": post.get("author") or "",
+                        "score": int(post.get("score") or 0),
+                        "num_comments": int(post.get("num_comments") or 0),
+                        "url": f"https://www.reddit.com{permalink}" if permalink else url,
+                    })
+            except Exception:
+                continue
+
+    if not posts_data:
+        return [], _empty_usage()
+
+    posts_data.sort(key=lambda d: d["score"], reverse=True)
+    usage_totals = _empty_usage()
+    posts = []
+    for data in posts_data[:limit]:
+        summary, usage_counts = await asyncio.to_thread(
+            _summarize_text, data["title"], data["selftext"], client
+        )
+        _merge_usage(usage_totals, usage_counts)
+        posts.append(BlogItem(
+            source="reddit",
+            title=data["title"],
+            summary=summary,
+            url=data["url"],
+            community=data["subreddit"],
+            author=data["author"] or None,
+            score=data["score"],
+            comments=data["num_comments"],
+            published_at=None,
+        ))
+    return posts, usage_totals
+
+
 async def _fetch_reddit_global_search(
     query: str,
     limit: int = 25,
@@ -1298,15 +1396,14 @@ async def run_live_browser_stream(
 
                 sem = asyncio.Semaphore(5)
 
-                # ── PHASE 1: Reddit direct search (no community selection) ──
-                yield emit("step", f"Searching Reddit: '{reddit_query}'...")
-                reddit_blogs, reddit_usage = await _fetch_reddit_global_search(
-                    query, limit=5, client=_sum_client, search_query=reddit_query
+                # ── PHASE 1: Reddit via Bing site:reddit.com → scrape .json ──
+                yield emit("step", f"Searching Reddit via Bing: '{reddit_query}'...")
+                reddit_blogs, reddit_usage = await _fetch_reddit_via_bing(
+                    query, reddit_query=reddit_query, limit=5, client=_sum_client
                 )
-                # Keep only the top 2 by score — Reddit is opinion/community, not primary source
                 reddit_blogs = sorted(reddit_blogs, key=lambda p: p.score or 0, reverse=True)[:2]
                 _merge_usage(usage_totals, reddit_usage)
-                yield emit("step", f"  → {len(reddit_blogs)} Reddit posts (top 2 by score)")
+                yield emit("step", f"  → {len(reddit_blogs)} Reddit posts (Bing→scrape, top 2 by score)")
 
                 # Launch browser for YouTube + News phases
                 yield emit("step", "Launching browser for YouTube + News...")
@@ -1545,6 +1642,34 @@ async def run_live_browser_stream(
                     """)
                     if tw_raw:
                         yield emit("step", f"  → {len(tw_raw)} tweets via Bing web search")
+                        # Enrich: use Twitter oEmbed to get actual tweet text (no login needed)
+                        try:
+                            import aiohttp as _aiohttp_oe
+                            from bs4 import BeautifulSoup as _BS_oe
+                            _enriched = []
+                            async with _aiohttp_oe.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as _oe_s:
+                                for _tw_item in tw_raw:
+                                    try:
+                                        _oe_req = f"https://publish.twitter.com/oembed?url={quote_plus(_tw_item['url'])}&omit_script=true"
+                                        async with _oe_s.get(_oe_req, timeout=_aiohttp_oe.ClientTimeout(total=5)) as _oe_r:
+                                            if _oe_r.status == 200:
+                                                _oe_json = await _oe_r.json()
+                                                _p_tag = _BS_oe(_oe_json.get("html", ""), "lxml").find("p")
+                                                _tweet_text = _p_tag.get_text(" ", strip=True) if _p_tag else ""
+                                                if len(_tweet_text) > 10:
+                                                    _enriched.append({
+                                                        "title": _tweet_text[:280],
+                                                        "url": _tw_item["url"],
+                                                        "author": f"@{_oe_json.get('author_name', '')}",
+                                                    })
+                                                    continue
+                                    except Exception:
+                                        pass
+                                    _enriched.append(_tw_item)
+                            tw_raw = _enriched
+                            yield emit("step", f"  → oEmbed enriched {len(tw_raw)} tweets")
+                        except Exception as _oe_err:
+                            logger.warning(f"[TWITTER_OEMBED] {_oe_err}")
 
                     # --- Attempt 2: twscrape (only if credentials set — full tweet text) ---
                     if not tw_raw:
