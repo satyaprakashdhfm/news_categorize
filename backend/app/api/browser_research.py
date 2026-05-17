@@ -1275,10 +1275,12 @@ async def run_live_browser_stream(
                 # ── PHASE 1: Reddit direct search (no community selection) ──
                 yield emit("step", f"Searching Reddit: '{reddit_query}'...")
                 reddit_blogs, reddit_usage = await _fetch_reddit_global_search(
-                    query, limit=25, client=_sum_client, search_query=reddit_query
+                    query, limit=5, client=_sum_client, search_query=reddit_query
                 )
+                # Keep only the top 2 by score — Reddit is opinion/community, not primary source
+                reddit_blogs = sorted(reddit_blogs, key=lambda p: p.score or 0, reverse=True)[:2]
                 _merge_usage(usage_totals, reddit_usage)
-                yield emit("step", f"  → {len(reddit_blogs)} posts from Reddit")
+                yield emit("step", f"  → {len(reddit_blogs)} Reddit posts (top 2 by score)")
 
                 # Launch browser for YouTube + News phases
                 yield emit("step", "Launching browser for YouTube + News...")
@@ -1605,7 +1607,8 @@ async def run_live_browser_stream(
                 await browser.close()
 
                 # ── Combine ────────────────────────────────────────────────
-                all_blogs: list[BlogItem] = reddit_blogs + youtube_blogs + news_blogs + twitter_blogs + hn_blogs + blog_blogs
+                # Order: primary sources first (news, video, HN, blogs, twitter), Reddit last
+                all_blogs: list[BlogItem] = youtube_blogs + news_blogs + hn_blogs + blog_blogs + twitter_blogs + reddit_blogs
                 yield emit("step", f"Total collected: {len(all_blogs)} items. Running AI relevance check...")
 
                 # ── AI title filter (1 LLM call, titles only) ──────────────
