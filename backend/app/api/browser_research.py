@@ -1512,63 +1512,63 @@ async def run_live_browser_stream(
                     yield emit("step", f"  → HN failed ({str(_hn_err)[:80]})")
 
                 # ── PHASE 3d: Twitter/X ───────────────────────────────────────────────
-                # Primary: twscrape (real account, actual tweet text, best quality).
-                # Fallback: Bing web search site:twitter.com (no login, snippet-level).
-                # Last resort: Bing News RSS site:x.com.
+                # Primary (no login): Bing web search site:twitter.com
+                # Upgrade (optional): twscrape if TWITTER_* env vars are set
+                # Last resort: Bing News RSS site:x.com
                 twitter_blogs: list[BlogItem] = []
                 try:
                     tw_raw = []
                     yield emit("step", f"Twitter/X search: '{twitter_query}'...")
 
-                    # --- Attempt 1: twscrape (authenticated, full tweet text) ---
-                    _tw_api = await _get_twscrape_api()
-                    if _tw_api:
-                        try:
-                            from twscrape import gather as _tw_gather
-                            yield emit("step", "  → twscrape: authenticated search...")
-                            _tweets = await _tw_gather(_tw_api.search(twitter_query, limit=12))
-                            for t in _tweets:
-                                _text = (getattr(t, "rawContent", None) or "").strip()
-                                if len(_text) < 10:
-                                    continue
-                                _uname = getattr(getattr(t, "user", None), "username", "") or ""
-                                _tid   = getattr(t, "id", "")
-                                _url   = f"https://twitter.com/{_uname}/status/{_tid}" if _uname and _tid else ""
-                                tw_raw.append({"title": _text[:280], "url": _url, "author": f"@{_uname}"})
-                            if tw_raw:
-                                yield emit("step", f"  → {len(tw_raw)} tweets via twscrape")
-                        except Exception as _tws_err:
-                            logger.warning(f"[TWSCRAPE] Search failed: {_tws_err}")
-                            yield emit("step", f"  → twscrape failed ({str(_tws_err)[:60]}), trying Bing...")
-                            global _twscrape_api
-                            _twscrape_api = None  # reset so next run re-authenticates
+                    # --- Attempt 1: Bing web search site:twitter.com (no login needed) ---
+                    _tw_bing_q = f"site:twitter.com OR site:x.com {twitter_query}"
+                    _tw_bing_url = f"https://www.bing.com/search?q={quote_plus(_tw_bing_q)}&freshness=Week"
+                    for ev in await nav(_tw_bing_url, t=20000):
+                        yield ev
+                    await asyncio.sleep(2)
+                    tw_raw = await page.evaluate("""
+                        () => {
+                            const items = [];
+                            document.querySelectorAll('#b_results li.b_algo').forEach(el => {
+                                const a = el.querySelector('h2 a');
+                                const snippet = el.querySelector('.b_caption .b_snippet, .b_caption p, .b_dList dd');
+                                if (!a) return;
+                                const url = a.href || '';
+                                const title = a.textContent.trim();
+                                const text = (snippet?.textContent || '').trim();
+                                if (!url.includes('twitter.com') && !url.includes('x.com')) return;
+                                if (!title) return;
+                                items.push({ title: (text || title).slice(0, 280), url, author: '' });
+                            });
+                            return items.slice(0, 12);
+                        }
+                    """)
+                    if tw_raw:
+                        yield emit("step", f"  → {len(tw_raw)} tweets via Bing web search")
 
-                    # --- Attempt 2: Bing web search site:twitter.com (Playwright) ---
+                    # --- Attempt 2: twscrape (only if credentials set — full tweet text) ---
                     if not tw_raw:
-                        _tw_bing_q = f"site:twitter.com OR site:x.com {twitter_query}"
-                        _tw_bing_url = f"https://www.bing.com/search?q={quote_plus(_tw_bing_q)}&freshness=Week"
-                        for ev in await nav(_tw_bing_url, t=20000):
-                            yield ev
-                        await asyncio.sleep(2)
-                        tw_raw = await page.evaluate("""
-                            () => {
-                                const items = [];
-                                document.querySelectorAll('#b_results li.b_algo').forEach(el => {
-                                    const a = el.querySelector('h2 a');
-                                    const snippet = el.querySelector('.b_caption .b_snippet, .b_caption p');
-                                    if (!a) return;
-                                    const url = a.href || '';
-                                    const title = a.textContent.trim();
-                                    const text = (snippet?.textContent || '').trim();
-                                    if (!url.includes('twitter.com') && !url.includes('x.com')) return;
-                                    if (!title) return;
-                                    items.push({ title: (text || title).slice(0, 200), url, author: '' });
-                                });
-                                return items.slice(0, 10);
-                            }
-                        """)
-                        if tw_raw:
-                            yield emit("step", f"  → {len(tw_raw)} tweets via Bing web search")
+                        _tw_api = await _get_twscrape_api()
+                        if _tw_api:
+                            try:
+                                from twscrape import gather as _tw_gather
+                                yield emit("step", "  → twscrape: authenticated search...")
+                                _tweets = await _tw_gather(_tw_api.search(twitter_query, limit=12))
+                                for t in _tweets:
+                                    _text = (getattr(t, "rawContent", None) or "").strip()
+                                    if len(_text) < 10:
+                                        continue
+                                    _uname = getattr(getattr(t, "user", None), "username", "") or ""
+                                    _tid   = getattr(t, "id", "")
+                                    _url   = f"https://twitter.com/{_uname}/status/{_tid}" if _uname and _tid else ""
+                                    tw_raw.append({"title": _text[:280], "url": _url, "author": f"@{_uname}"})
+                                if tw_raw:
+                                    yield emit("step", f"  → {len(tw_raw)} tweets via twscrape")
+                            except Exception as _tws_err:
+                                logger.warning(f"[TWSCRAPE] Search failed: {_tws_err}")
+                                yield emit("step", f"  → twscrape failed ({str(_tws_err)[:60]})")
+                                global _twscrape_api
+                                _twscrape_api = None
 
                     # --- Attempt 3: Bing News RSS (last resort) ---
                     if not tw_raw:
