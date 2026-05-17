@@ -24,7 +24,8 @@ class UserRecommendation(Base):
     source_url = Column(String(1024), nullable=True)
     source_type = Column(String(16), nullable=True)  # "google_news", "reddit", "youtube"
     image_url = Column(String(1024), nullable=True)
-    score = Column(Integer, nullable=True)  # reddit score or youtube views
+    score = Column(Integer, nullable=True)  # relevance score
+    experiment = Column(String(32), nullable=True)  # A/B test group: "control", "trending", etc.
 
     user = relationship("User", foreign_keys=[user_id])
     card = relationship("FeedCard", foreign_keys=[card_id])

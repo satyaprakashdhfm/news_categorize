@@ -16,12 +16,15 @@ export const authApi = {
   login: (data) => api.post('/auth/login', data).then((r) => r.data),
   me: () => api.get('/auth/me').then((r) => r.data),
   updateInterests: (interests) => api.put('/auth/interests', { interests }).then((r) => r.data),
+  updateProfile: (data) => api.put('/auth/profile', data).then((r) => r.data),
 };
 
 // ── Recommendations ─────────────────────────────────────────────────────────
 export const recommendationsApi = {
   getMy: (params = {}) => api.get('/recommendations/my', { params }).then((r) => r.data),
   markSeen: (recIds) => api.post('/recommendations/mark-seen', recIds).then((r) => r.data),
+  trackClick: (recId) => api.post('/recommendations/track-click', { rec_id: recId }).then((r) => r.data),
+  trackDwell: (recId, dwellSeconds) => api.post('/recommendations/track-dwell', { rec_id: recId, dwell_seconds: dwellSeconds }).then((r) => r.data),
 };
 
 // ── Feed Cards ───────────────────────────────────────────────────────────────

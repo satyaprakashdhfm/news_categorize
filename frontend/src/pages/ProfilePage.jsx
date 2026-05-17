@@ -5,6 +5,21 @@ import { authApi, browserResearchApi, feedCardsApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 import { INTEREST_TREE } from '@/utils/helpers';
 
+const TIMEZONE_OPTIONS = [
+  { value: 'UTC', label: 'UTC' },
+  { value: 'America/New_York', label: 'US Eastern (ET)' },
+  { value: 'America/Chicago', label: 'US Central (CT)' },
+  { value: 'America/Denver', label: 'US Mountain (MT)' },
+  { value: 'America/Los_Angeles', label: 'US Pacific (PT)' },
+  { value: 'Europe/London', label: 'London (GMT/BST)' },
+  { value: 'Europe/Berlin', label: 'Berlin (CET)' },
+  { value: 'Europe/Paris', label: 'Paris (CET)' },
+  { value: 'Asia/Kolkata', label: 'India (IST)' },
+  { value: 'Asia/Shanghai', label: 'China (CST)' },
+  { value: 'Asia/Tokyo', label: 'Japan (JST)' },
+  { value: 'Australia/Sydney', label: 'Sydney (AEST)' },
+];
+
 function fmtInt(value) {
   return Number(value || 0).toLocaleString();
 }
@@ -138,9 +153,14 @@ export default function ProfilePage({ isDark, toggleDark }) {
   const [interestsSaving, setInterestsSaving] = useState(false);
   const [interestsSaved, setInterestsSaved] = useState(false);
 
+  const [tz, setTz] = useState('UTC');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login'); return; }
     setInterests(user?.interests || []);
+    setTz(user?.timezone || 'UTC');
     loadHistory();
     loadPins();
   }, [isAuthenticated]);
@@ -192,6 +212,18 @@ export default function ProfilePage({ isDark, toggleDark }) {
       setTimeout(() => setInterestsSaved(false), 2500);
     } catch { /* silent */ } finally {
       setInterestsSaving(false);
+    }
+  };
+
+  const saveProfile = async () => {
+    setProfileSaving(true);
+    try {
+      const updated = await authApi.updateProfile({ timezone: tz });
+      setUser(updated);
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2500);
+    } catch { /* silent */ } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -248,6 +280,50 @@ export default function ProfilePage({ isDark, toggleDark }) {
               </p>
               <p className="meta" style={{ marginTop: 2 }}>Interests tracked</p>
             </div>
+          </div>
+        </div>
+
+        {/* Timezone */}
+        <div className="panel" style={{ marginBottom: 20 }}>
+          <h2 style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--fg-1)', margin: '0 0 4px' }}>
+            Timezone
+          </h2>
+          <p className="meta" style={{ marginBottom: 16 }}>
+            Sets your recommendation batch labels (morning / afternoon / evening).
+          </p>
+
+          <div style={{ maxWidth: 300 }}>
+            <select
+              value={tz}
+              onChange={(e) => { setTz(e.target.value); setProfileSaved(false); }}
+              style={{
+                width: '100%', padding: '8px 12px',
+                borderRadius: 'var(--r-md)', border: '1.5px solid var(--line-1)',
+                background: 'var(--bg-0)', color: 'var(--fg-1)',
+                fontSize: 'var(--t-body)', cursor: 'pointer',
+              }}
+            >
+              {TIMEZONE_OPTIONS.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, marginTop: 16,
+            padding: '14px 0 0', borderTop: '1px solid var(--line-1)',
+          }}>
+            <button
+              className="btn btn--primary"
+              onClick={saveProfile}
+              disabled={profileSaving}
+              style={{ minWidth: 140 }}
+            >
+              {profileSaving ? 'Saving...' : profileSaved ? 'Saved!' : 'Save Timezone'}
+            </button>
+            <span className="meta" style={{ color: 'var(--fg-4)' }}>
+              News from all 8 countries automatically
+            </span>
           </div>
         </div>
 

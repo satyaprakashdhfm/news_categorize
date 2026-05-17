@@ -7,6 +7,7 @@ from app.models.custom_youtube_video import CustomYouTubeVideo
 from app.models.custom_reddit_post import CustomRedditPost
 from app.models.browser_research_run import BrowserResearchRun, BrowserResearchItem, BrowserResearchRunMetric
 from app.models.recommendation import UserRecommendation
+from app.models.user_interaction import UserInteraction
 from app.models.source import Source, SourceVote
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "BrowserResearchItem",
     "BrowserResearchRunMetric",
     "UserRecommendation",
+    "UserInteraction",
     "Source",
     "SourceVote",
 ]

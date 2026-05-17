@@ -8,6 +8,7 @@ class RegisterRequest(BaseModel):
     name: str
     password: str
     interests: Optional[list[str]] = None
+    timezone: Optional[str] = "UTC"
 
 
 class LoginRequest(BaseModel):
@@ -26,6 +27,7 @@ class UserResponse(BaseModel):
     name: str
     role: str
     interests: Optional[list[str]] = None
+    timezone: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -34,3 +36,7 @@ class UserResponse(BaseModel):
 
 class UpdateInterestsRequest(BaseModel):
     interests: list[str]  # e.g. ["POL", "TEC", "ECO"]
+
+
+class UpdateProfileRequest(BaseModel):
+    timezone: Optional[str] = None

@@ -19,6 +19,16 @@ const SOURCE_ICONS = {
   google_news: '📰',
   reddit: '🔴',
   youtube: '▶️',
+  hackernews: '🟠',
+  rss: '📡',
+};
+
+const SOURCE_LABELS = {
+  google_news: 'News',
+  reddit: 'Reddit',
+  youtube: 'YouTube',
+  hackernews: 'Hacker News',
+  rss: 'RSS',
 };
 
 function TrendingShimmer() {
@@ -192,22 +202,53 @@ function RecCard({ rec, onDismiss }) {
   const accentColor = DOMAIN_COLORS_CSS[rec.domain] || DOMAIN_COLORS_CSS.OTH;
   const catInfo = CATEGORIES.find((c) => c.id === rec.domain);
   const sourceIcon = SOURCE_ICONS[rec.source_type] || '🔗';
+  const isSerendipity = rec.reason?.startsWith('Discover:');
+
+  const handleClick = () => {
+    if (!rec.source_url) return;
+    // Track click + measure dwell time (how long user reads the article)
+    const clickTime = Date.now();
+    recommendationsApi.trackClick(rec.id).catch(() => {});
+    window.open(rec.source_url, '_blank', 'noopener');
+
+    // When user returns to this tab, send dwell time
+    const onReturn = () => {
+      const dwellSeconds = Math.round((Date.now() - clickTime) / 1000);
+      if (dwellSeconds >= 3 && dwellSeconds < 3600) {
+        recommendationsApi.trackDwell(rec.id, dwellSeconds).catch(() => {});
+      }
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') onReturn();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    // Cleanup after 1 hour
+    setTimeout(() => document.removeEventListener('visibilitychange', handleVisibility), 3600000);
+  };
 
   return (
     <article
       className="card card--research"
       style={{ cursor: rec.source_url ? 'pointer' : 'default' }}
-      onClick={() => rec.source_url && window.open(rec.source_url, '_blank', 'noopener')}
+      onClick={handleClick}
     >
       {/* Reason badge */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 4,
-        fontSize: 'var(--t-micro)', color: 'var(--accent)', fontWeight: 500,
+        fontSize: 'var(--t-micro)', color: isSerendipity ? '#e8913c' : 'var(--accent)', fontWeight: 500,
         marginBottom: 4,
       }}>
-        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-          <path d="M6 1 L7.5 4.5 L11 5 L8.5 7.5 L9 11 L6 9.5 L3 11 L3.5 7.5 L1 5 L4.5 4.5Z" stroke="currentColor" strokeWidth="1.2" fill="none"/>
-        </svg>
+        {isSerendipity ? (
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+            <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2"/>
+            <path d="M6 3 V6.5 L8 8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+        ) : (
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+            <path d="M6 1 L7.5 4.5 L11 5 L8.5 7.5 L9 11 L6 9.5 L3 11 L3.5 7.5 L1 5 L4.5 4.5Z" stroke="currentColor" strokeWidth="1.2" fill="none"/>
+          </svg>
+        )}
         {rec.reason}
       </div>
 
@@ -215,7 +256,7 @@ function RecCard({ rec, onDismiss }) {
       <header className="card__head">
         <span className="card__kind">
           <span>{sourceIcon}</span>
-          {rec.source_type === 'google_news' ? 'News' : rec.source_type === 'reddit' ? 'Reddit' : rec.source_type === 'youtube' ? 'YouTube' : 'Web'}
+          {SOURCE_LABELS[rec.source_type] || 'Web'}
         </span>
         {rec.subdomain && (
           <span className="tag tag--code">{SUBCATEGORY_LABELS[rec.subdomain] || rec.subdomain}</span>
@@ -251,7 +292,7 @@ function RecCard({ rec, onDismiss }) {
       {/* Footer */}
       <footer className="card__foot">
         {rec.score != null && (
-          <span className="meta">{rec.source_type === 'youtube' ? `${(rec.score / 1000).toFixed(1)}k views` : `${rec.score} pts`}</span>
+          <span className="meta" title="Relevance score">Relevance: {rec.score}</span>
         )}
         <span style={{ flex: 1 }} />
         {rec.source_url && (
@@ -297,6 +338,10 @@ export default function HomePage({ isDark, toggleDark }) {
   // Recommendations from cron
   const [recs, setRecs] = useState([]);
   const [recsLoading, setRecsLoading] = useState(false);
+  const [recsOffset, setRecsOffset] = useState(0);
+  const [recsHasMore, setRecsHasMore] = useState(false);
+  const [recsTotal, setRecsTotal] = useState(0);
+  const [recsLoadingMore, setRecsLoadingMore] = useState(false);
 
   const [hotCards, setHotCards] = useState([]);
   const [hotLoading, setHotLoading] = useState(false);
@@ -349,19 +394,34 @@ export default function HomePage({ isDark, toggleDark }) {
     }
   }, [isAuthenticated]);
 
-  const loadRecs = useCallback(async () => {
+  const loadRecs = useCallback(async (append = false) => {
     if (!isAuthenticated) return;
-    setRecsLoading(true);
+    if (append) {
+      setRecsLoadingMore(true);
+    } else {
+      setRecsLoading(true);
+      setRecsOffset(0);
+    }
     try {
-      const params = {};
+      const offset = append ? recsOffset : 0;
+      const params = { limit: 50, offset };
       if (domain) params.domain = domain;
       const res = await recommendationsApi.getMy(params);
-      setRecs(res.recommendations || []);
+      const newRecs = res.recommendations || [];
+      if (append) {
+        setRecs((prev) => [...prev, ...newRecs]);
+      } else {
+        setRecs(newRecs);
+      }
+      setRecsTotal(res.total || 0);
+      setRecsHasMore(res.has_more || false);
+      setRecsOffset(offset + newRecs.length);
       setLastSyncTime(new Date());
     } catch { /* silent */ } finally {
       setRecsLoading(false);
+      setRecsLoadingMore(false);
     }
-  }, [isAuthenticated, domain]);
+  }, [isAuthenticated, domain, recsOffset]);
 
   const loadHot = useCallback(async () => {
     setHotLoading(true);
@@ -386,7 +446,7 @@ export default function HomePage({ isDark, toggleDark }) {
   useEffect(() => { if (isAuthenticated) loadMyPins(); }, [loadMyPins, isAuthenticated]);
   useEffect(() => { if (activeTab === 'your') loadMyCards(); }, [activeTab, loadMyCards]);
   useEffect(() => { if (activeTab === 'saved' && isAuthenticated) loadMyPins(); }, [activeTab, isAuthenticated]);
-  useEffect(() => { if (activeTab === 'recommended' && isAuthenticated) loadRecs(); }, [activeTab, loadRecs, isAuthenticated]);
+  useEffect(() => { if (activeTab === 'recommended' && isAuthenticated) loadRecs(false); }, [activeTab, isAuthenticated, domain]);
 
   const handlePin = () => loadMyPins();
   const handleUnpin = (cardId) => setMyPins((prev) => prev.filter((p) => p.card_id !== cardId));
@@ -409,7 +469,7 @@ export default function HomePage({ isDark, toggleDark }) {
     if (activeTab === 'global') loadGlobal();
     else if (activeTab === 'your') loadMyCards();
     else if (activeTab === 'saved') loadMyPins();
-    else loadRecs();
+    else loadRecs(false);
   };
 
   const activeCount = activeTab === 'global' ? globalCards.length
@@ -513,14 +573,14 @@ export default function HomePage({ isDark, toggleDark }) {
             {/* Feed status */}
             <div className="feed__status">
               <span className="meta">
-                {activeTab === 'recommended' ? `${recs.length} recommendations` : `${displayCards.length} cards`}
+                {activeTab === 'recommended' ? `${recs.length}${recsTotal > recs.length ? ` of ${recsTotal}` : ''} recommendations` : `${displayCards.length} cards`}
               </span>
               <span className="feed__sep">·</span>
               <span className="meta">
                 {activeTab === 'global' ? 'trending & domain cards'
                   : activeTab === 'saved' ? 'your saved cards'
                   : activeTab === 'your' ? 'your research'
-                  : 'personalized from Google News, Reddit & YouTube'}
+                  : 'personalized from Google News, Reddit, YouTube, HN & RSS'}
               </span>
               <button className="iconbtn" title="Refresh" style={{ marginLeft: 'auto' }} onClick={refreshCurrent}>
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={loading ? { animation: 'spin 1s linear infinite' } : undefined}>
@@ -562,7 +622,7 @@ export default function HomePage({ isDark, toggleDark }) {
                         ? 'Cards you save appear here — your personal reading list.'
                         : activeTab === 'your'
                         ? 'Your research cards are private and only visible to you.'
-                        : 'Get recommendations from Google News, Reddit & YouTube based on your interests.'}
+                        : 'Get recommendations from Google News, Reddit, YouTube, Hacker News & RSS based on your interests.'}
                     </p>
                     <div className="empty-state__actions">
                       <Link to="/login" className="btn btn--primary">Sign in</Link>
@@ -583,16 +643,37 @@ export default function HomePage({ isDark, toggleDark }) {
                     <path d="M20 6 L23 16 L34 17 L26 24 L28 34 L20 29 L12 34 L14 24 L6 17 L17 16Z" stroke="currentColor" strokeWidth="1.2" fill="none"/>
                   </svg>
                   <p className="empty__text">
-                    No recommendations yet. Set your domain interests in your profile. The system searches Google News, Reddit &amp; YouTube at 6 AM, 2 PM &amp; 8 PM IST.
+                    No recommendations yet. Set your domain interests in your profile. The system pulls from Google News, Reddit, YouTube, Hacker News &amp; RSS feeds at 6 AM, 2 PM &amp; 8 PM IST.
                   </p>
                   <Link to="/profile" className="btn btn--primary">Update interests</Link>
                 </div>
               ) : (
-                <div className="grid">
-                  {recs.map((rec) => (
-                    <RecCard key={rec.id} rec={rec} onDismiss={handleDismissRec} />
-                  ))}
-                </div>
+                <>
+                  <div className="grid">
+                    {recs.map((rec) => (
+                      <RecCard key={rec.id} rec={rec} onDismiss={handleDismissRec} />
+                    ))}
+                  </div>
+                  {recsHasMore && (
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0' }}>
+                      <button
+                        className="btn"
+                        onClick={() => loadRecs(true)}
+                        disabled={recsLoadingMore}
+                        style={{ minWidth: 160 }}
+                      >
+                        {recsLoadingMore ? (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ width: 14, height: 14, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', display: 'inline-block' }} />
+                            Loading...
+                          </span>
+                        ) : (
+                          `Load More (${recs.length} of ${recsTotal})`
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </>
               )
             ) : activeTab === 'saved' && displayCards.length === 0 ? (
               <div className="empty">

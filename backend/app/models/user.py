@@ -14,6 +14,7 @@ class User(Base):
     password_hash = Column(String(512), nullable=False)
     role = Column(String(16), nullable=False, default="user")  # 'user' | 'admin'
     interests = Column(JSON, nullable=True, default=list)
+    timezone = Column(String(64), nullable=True, default="UTC")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
     feed_cards = relationship("FeedCard", back_populates="creator", foreign_keys="FeedCard.created_by")
